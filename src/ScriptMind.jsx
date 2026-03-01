@@ -1,0 +1,1069 @@
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+
+// ─── Constants ───
+const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition"];
+const TAB_CYCLE = ["action", "character", "dialogue", "action"];
+
+const DEFAULT_SCRIPT = {
+  title: "Untitled Screenplay",
+  author: "Writer",
+  elements: [
+    { id: "el-1", type: "scene-heading", text: "INT. DETECTIVE'S OFFICE — DAY" },
+    { id: "el-2", type: "action", text: "A cluttered desk drowns under case files. Coffee rings stain every surface. DETECTIVE COLE (50s, rumpled suit, reading glasses he refuses to wear in public) stares at a corkboard covered in photographs." },
+    { id: "el-3", type: "character", text: "DETECTIVE COLE" },
+    { id: "el-4", type: "parenthetical", text: "(to himself)" },
+    { id: "el-5", type: "dialogue", text: "Something's not right." },
+    { id: "el-6", type: "action", text: "He pulls a photograph from the board. Studies it." },
+    { id: "el-7", type: "scene-heading", text: "EXT. RAINY STREET — NIGHT" },
+    { id: "el-8", type: "action", text: "Rain hammers the pavement. A lone figure moves through the downpour — MORGAN (40s, worn leather jacket, eyes that have seen too much). She walks with purpose, checking over her shoulder every few steps." },
+    { id: "el-9", type: "character", text: "MORGAN" },
+    { id: "el-10", type: "parenthetical", text: "(into phone)" },
+    { id: "el-11", type: "dialogue", text: "I'm coming in. But not through the front." },
+    { id: "el-12", type: "action", text: "She hangs up. Ducks into an alley." },
+    { id: "el-13", type: "transition", text: "CUT TO:" },
+    { id: "el-14", type: "scene-heading", text: "INT. MORGAN'S APARTMENT — NIGHT" },
+    { id: "el-15", type: "action", text: "The apartment is sparse. A single lamp cuts through the dark. Morgan sits at the kitchen table, phone face-down in front of her." },
+    { id: "el-16", type: "action", text: "A knock at the door. She doesn't move." },
+    { id: "el-17", type: "character", text: "MORGAN" },
+    { id: "el-18", type: "parenthetical", text: "(without turning)" },
+    { id: "el-19", type: "dialogue", text: "It's open." },
+    { id: "el-20", type: "action", text: "Detective Cole enters. He surveys the room before finding her." },
+    { id: "el-21", type: "character", text: "DETECTIVE COLE" },
+    { id: "el-22", type: "dialogue", text: "You weren't at the precinct. Martinez is asking questions." },
+    { id: "el-23", type: "character", text: "MORGAN" },
+    { id: "el-24", type: "dialogue", text: "Let him ask." },
+    { id: "el-25", type: "scene-heading", text: "INT. POLICE PRECINCT — DAY" },
+    { id: "el-26", type: "action", text: "The bullpen buzzes with activity. Phones ring. Officers move between desks. MARTINEZ (30s, sharp suit, ambitious) stands at a whiteboard, mapping connections." },
+    { id: "el-27", type: "character", text: "MARTINEZ" },
+    { id: "el-28", type: "dialogue", text: "She knows more than she's telling us. I can feel it." },
+    { id: "el-29", type: "scene-heading", text: "EXT. ROOFTOP — DAWN" },
+    { id: "el-30", type: "action", text: "The city sprawls below, still waking. Morgan stands at the edge, wind pulling at her jacket. She holds an envelope — unopened." },
+    { id: "el-31", type: "character", text: "MORGAN" },
+    { id: "el-32", type: "parenthetical", text: "(quiet)" },
+    { id: "el-33", type: "dialogue", text: "You don't get to decide when this ends." },
+    { id: "el-34", type: "scene-heading", text: "INT. INTERROGATION ROOM — DAY" },
+    { id: "el-35", type: "action", text: "Bare walls. A metal table. Two chairs. Morgan sits on one side, Cole on the other. A file folder between them." },
+    { id: "el-36", type: "character", text: "DETECTIVE COLE" },
+    { id: "el-37", type: "dialogue", text: "Tell me about the night of the fourteenth." },
+    { id: "el-38", type: "character", text: "MORGAN" },
+    { id: "el-39", type: "parenthetical", text: "(long beat)" },
+    { id: "el-40", type: "dialogue", text: "Which part?" },
+  ],
+};
+
+const INITIAL_MESSAGES = [
+  {
+    id: "m-1",
+    role: "assistant",
+    text: "I've read your screenplay. The tension between Morgan and Cole is compelling — her silence carries real weight. A few thoughts:\n\n• The phone buzzing in Scene 3 would be a natural beat — want me to write it in?\n• Cole feels reactive. You might give him one line that shows what *he's* afraid of, not just what he wants from Morgan.\n• The transition from Scene 2 to Scene 3 is strong. The rain to the sparse apartment is a nice tonal shift.",
+  },
+];
+
+// ─── Utility Functions ───
+const uid = () => "el-" + Math.random().toString(36).slice(2, 9);
+const msgId = () => "m-" + Math.random().toString(36).slice(2, 9);
+
+function getScenes(elements) {
+  const scenes = [];
+  elements.forEach((el, idx) => {
+    if (el.type === "scene-heading") {
+      scenes.push({ index: idx, text: el.text, id: el.id });
+    }
+  });
+  return scenes;
+}
+
+function getWordCount(elements) {
+  return elements.reduce((sum, el) => sum + el.text.split(/\s+/).filter(Boolean).length, 0);
+}
+
+function getPageCount(elements) {
+  // Rough: ~250 words per page for screenplay
+  return Math.max(1, Math.ceil(getWordCount(elements) / 250));
+}
+
+function splitIntoPages(elements, wordsPerPage = 150) {
+  const pages = [];
+  let currentPage = [];
+  let currentWordCount = 0;
+
+  for (const el of elements) {
+    const elWords = el.text.split(/\s+/).filter(Boolean).length;
+    if (currentPage.length > 0 && currentWordCount + elWords > wordsPerPage) {
+      pages.push(currentPage);
+      currentPage = [];
+      currentWordCount = 0;
+    }
+    currentPage.push(el);
+    currentWordCount += elWords;
+  }
+  if (currentPage.length > 0) pages.push(currentPage);
+  return pages;
+}
+
+function getCurrentSceneIndex(elements, activeElId) {
+  let sceneIdx = 0;
+  for (let i = 0; i < elements.length; i++) {
+    if (elements[i].type === "scene-heading") sceneIdx++;
+    if (elements[i].id === activeElId) return sceneIdx;
+  }
+  return sceneIdx;
+}
+
+function getNextType(currentType) {
+  if (currentType === "character") return "dialogue";
+  if (currentType === "dialogue") return "action";
+  if (currentType === "parenthetical") return "dialogue";
+  if (currentType === "scene-heading") return "action";
+  if (currentType === "transition") return "action";
+  return "action";
+}
+
+function cycleType(currentType) {
+  const idx = TAB_CYCLE.indexOf(currentType);
+  if (idx === -1) return "action";
+  return TAB_CYCLE[(idx + 1) % TAB_CYCLE.length];
+}
+
+function autoFormatText(type, text) {
+  if (type === "scene-heading") {
+    let t = text.toUpperCase();
+    if (t && !t.startsWith("INT.") && !t.startsWith("EXT.") && !t.startsWith("INT/EXT") && !t.startsWith("I/E")) {
+      t = "INT. " + t;
+    }
+    return t;
+  }
+  if (type === "character") return text.toUpperCase();
+  if (type === "transition") return text.toUpperCase();
+  return text;
+}
+
+function elementsToFountain(elements, title = "Untitled") {
+  let fountain = `Title: ${title}\nCredit: written by\nAuthor: Writer\n\n`;
+  elements.forEach((el) => {
+    switch (el.type) {
+      case "scene-heading":
+        fountain += `\n${el.text}\n\n`;
+        break;
+      case "action":
+        fountain += `${el.text}\n\n`;
+        break;
+      case "character":
+        fountain += `${el.text}\n`;
+        break;
+      case "dialogue":
+        fountain += `${el.text}\n\n`;
+        break;
+      case "parenthetical":
+        fountain += `(${el.text.replace(/^\(|\)$/g, "")})\n`;
+        break;
+      case "transition":
+        fountain += `> ${el.text}\n\n`;
+        break;
+      default:
+        fountain += `${el.text}\n\n`;
+    }
+  });
+  return fountain;
+}
+
+function parseFountain(text) {
+  const lines = text.split("\n");
+  const elements = [];
+  let i = 0;
+  // Skip title page
+  while (i < lines.length && lines[i].match(/^(Title|Credit|Author|Source|Draft date|Contact|Copyright):/i)) {
+    i++;
+    while (i < lines.length && lines[i].startsWith("  ")) i++;
+  }
+  while (i < lines.length && lines[i].trim() === "") i++;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+    if (line.match(/^(INT\.|EXT\.|INT\/EXT|I\/E)/i)) {
+      elements.push({ id: uid(), type: "scene-heading", text: line.toUpperCase() });
+    } else if (line.startsWith(">") && !line.startsWith(">>")) {
+      elements.push({ id: uid(), type: "transition", text: line.replace(/^>\s*/, "").toUpperCase() });
+    } else if (line.match(/^\(.*\)$/)) {
+      elements.push({ id: uid(), type: "parenthetical", text: line });
+    } else if (line === line.toUpperCase() && line.length > 1 && !line.match(/^(INT\.|EXT\.)/) && line.match(/^[A-Z]/)) {
+      elements.push({ id: uid(), type: "character", text: line });
+      // Next non-empty line is likely dialogue
+      i++;
+      while (i < lines.length) {
+        const dl = lines[i].trim();
+        if (!dl) break;
+        if (dl.match(/^\(.*\)$/)) {
+          elements.push({ id: uid(), type: "parenthetical", text: dl });
+        } else {
+          elements.push({ id: uid(), type: "dialogue", text: dl });
+        }
+        i++;
+      }
+      continue;
+    } else {
+      elements.push({ id: uid(), type: "action", text: line });
+    }
+    i++;
+  }
+  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
+}
+
+function parseFDX(xmlText) {
+  const elements = [];
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, "text/xml");
+  const paragraphs = doc.querySelectorAll("Paragraph");
+  paragraphs.forEach((p) => {
+    const pType = p.getAttribute("Type") || "";
+    const textNodes = p.querySelectorAll("Text");
+    const text = Array.from(textNodes).map((t) => t.textContent).join("");
+    if (!text.trim()) return;
+    const typeMap = {
+      "Scene Heading": "scene-heading",
+      "Action": "action",
+      "Character": "character",
+      "Dialogue": "dialogue",
+      "Parenthetical": "parenthetical",
+      "Transition": "transition",
+    };
+    elements.push({ id: uid(), type: typeMap[pType] || "action", text: text.trim() });
+  });
+  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
+}
+
+// ─── Icons ───
+function SendIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+function FileIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+function SparkleIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ animation: "rotateSpark 4s linear infinite" }}>
+      <path d="M12 0L14.59 8.41L23 11L14.59 13.59L12 22L9.41 13.59L1 11L9.41 8.41L12 0Z" />
+    </svg>
+  );
+}
+function ChevronIcon({ direction = "down" }) {
+  const rotation = direction === "up" ? 180 : direction === "left" ? 90 : direction === "right" ? -90 : 0;
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: `rotate(${rotation}deg)` }}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+// ─── Screenplay Element Component ───
+function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, activeType }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (isActive && ref.current) {
+      ref.current.focus();
+      // Place cursor at end
+      const range = document.createRange();
+      const sel = window.getSelection();
+      if (ref.current.childNodes.length > 0) {
+        range.selectNodeContents(ref.current);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  }, [isActive]);
+
+  const handleInput = (e) => {
+    let text = e.currentTarget.textContent || "";
+    onChange(element.id, text);
+  };
+
+  const typeStyles = {
+    "scene-heading": "uppercase font-semibold tracking-wide text-left",
+    "action": "text-left",
+    "character": "uppercase font-semibold text-left",
+    "dialogue": "text-left",
+    "parenthetical": "italic text-left",
+    "transition": "uppercase text-right font-semibold",
+  };
+
+  // Industry-standard screenplay margins (500px content area)
+  // Character cue at ~37% from left, dialogue/parenthetical symmetrically indented
+  const margins = {
+    "scene-heading": { marginLeft: 0, marginRight: 0, marginBottom: 4 },
+    "action":        { marginLeft: 0, marginRight: 0, marginBottom: 16 },
+    "character":     { marginLeft: 185, marginRight: 0, marginBottom: 2 },
+    "dialogue":      { marginLeft: 85, marginRight: 85, marginBottom: 16 },
+    "parenthetical": { marginLeft: 135, marginRight: 135, marginBottom: 2 },
+    "transition":    { marginLeft: 0, marginRight: 0, marginTop: 16, marginBottom: 16 },
+  };
+
+  const style = margins[element.type] || {};
+
+  return (
+    <div
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      className={`outline-none cursor-text ${typeStyles[element.type] || ""} ${isActive ? "ring-1 ring-red-400/30 rounded px-1 -mx-1 bg-red-50/50" : ""}`}
+      style={{
+        ...style,
+        fontFamily: "'Courier Prime', 'Courier New', Courier, monospace",
+        fontSize: "13.5px",
+        lineHeight: "1.85",
+        minHeight: "1.85em",
+        whiteSpace: "pre-wrap",
+        color: element.type === "parenthetical" ? "#666666" : undefined,
+      }}
+      onClick={() => onClick(element.id)}
+      onInput={handleInput}
+      onKeyDown={(e) => onKeyDown(e, element)}
+      spellCheck
+      data-placeholder={element.type === "scene-heading" ? "INT./EXT. LOCATION — TIME" : element.type === "action" ? "Describe what we see..." : element.type === "character" ? "CHARACTER NAME" : element.type === "dialogue" ? "Dialogue..." : element.type === "parenthetical" ? "(beat)" : "CUT TO:"}
+    >
+      {element.text}
+    </div>
+  );
+}
+
+// ─── AI Message Component ───
+function AIMessage({ msg }) {
+  const isAI = msg.role === "assistant";
+
+  const formatText = (text) => {
+    return text.split("\n").map((line, i) => {
+      let formatted = line.replace(/\*([^*]+)\*/g, '<em style="color:#ffffff;font-style:normal;font-weight:500">$1</em>');
+      formatted = formatted.replace(/^• /, '<span style="color:#c43e3e">•</span> ');
+      return <p key={i} dangerouslySetInnerHTML={{ __html: formatted }} style={{ marginBottom: line === "" ? 8 : 2 }} />;
+    });
+  };
+
+  return (
+    <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
+      <div
+        className="flex-shrink-0 flex items-center justify-center rounded-full"
+        style={{
+          width: 28, height: 28,
+          background: isAI ? "rgba(196,62,62,0.2)" : "rgba(255,255,255,0.1)",
+          color: isAI ? "#c43e3e" : "#e8e8e8",
+          fontSize: 11, fontWeight: 600,
+          fontFamily: isAI ? "'Playfair Display', serif" : "inherit",
+          fontStyle: isAI ? "italic" : "normal",
+        }}
+      >
+        {isAI ? "S" : "Y"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div style={{ fontSize: 10, color: "#555555", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          {isAI ? "ScriptMind" : "You"}
+        </div>
+        <div
+          style={{
+            fontSize: 12.5, lineHeight: 1.6,
+            background: isAI ? "#111111" : "rgba(255,255,255,0.06)",
+            border: `1px solid ${isAI ? "#222222" : "rgba(255,255,255,0.15)"}`,
+            borderRadius: 6, padding: "10px 12px", color: "#e8e8e8",
+          }}
+        >
+          {formatText(msg.text)}
+        </div>
+        {msg.streaming && (
+          <div style={{ marginTop: 4, fontSize: 11, color: "#c43e3e" }}>
+            <span className="inline-block" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>●</span> Thinking...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── File Menu Dropdown ───
+function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, isOpen, onToggle }) {
+  if (!isOpen) return null;
+  return (
+    <div
+      className="absolute z-50"
+      style={{
+        top: 42, left: 0,
+        background: "#111111", border: "1px solid #222222",
+        borderRadius: 6, padding: 4, minWidth: 180,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+      }}
+    >
+      {[
+        { label: "New Script", icon: "✦", action: onNew },
+        { label: "Import .fountain / .fdx", icon: "↑", action: onImport },
+        { label: "─", divider: true },
+        { label: "Export as PDF", icon: "↓", action: onExportPDF },
+        { label: "Export as .fountain", icon: "↓", action: onExportFountain },
+      ].map((item, i) =>
+        item.divider ? (
+          <div key={i} style={{ height: 1, background: "#222222", margin: "4px 0" }} />
+        ) : (
+          <button
+            key={i}
+            onClick={() => { item.action(); onToggle(); }}
+            className="w-full text-left flex items-center gap-2"
+            style={{
+              padding: "6px 10px", borderRadius: 4, border: "none",
+              background: "transparent", color: "#888888", fontSize: 12,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#222222"; e.currentTarget.style.color = "#e8e8e8"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
+          >
+            <span style={{ width: 16, textAlign: "center", fontSize: 11 }}>{item.icon}</span>
+            {item.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── Main App ───
+export default function ScriptMind() {
+  const [elements, setElements] = useState(DEFAULT_SCRIPT.elements);
+  const [activeElId, setActiveElId] = useState("el-14");
+  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const [chatInput, setChatInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [lastSaved, setLastSaved] = useState("just now");
+  const [scriptTitle, setScriptTitle] = useState("untitled_screenplay");
+  const [notification, setNotification] = useState(null);
+
+  const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const editorScrollRef = useRef(null);
+
+  // Scenes
+  const scenes = useMemo(() => getScenes(elements), [elements]);
+  const wordCount = useMemo(() => getWordCount(elements), [elements]);
+  const pageCount = useMemo(() => getPageCount(elements), [elements]);
+  const currentScene = useMemo(() => getCurrentSceneIndex(elements, activeElId), [elements, activeElId]);
+  const pages = useMemo(() => splitIntoPages(elements), [elements]);
+
+  // Auto-save simulation
+  useEffect(() => {
+    const interval = setInterval(() => setLastSaved("just now"), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Notifications
+  const showNotification = (text) => {
+    setNotification(text);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Element operations
+  const updateElement = useCallback((id, text) => {
+    setElements((prev) =>
+      prev.map((el) => (el.id === id ? { ...el, text } : el))
+    );
+  }, []);
+
+  const insertElementAfter = useCallback((afterId, type, text = "") => {
+    const newEl = { id: uid(), type, text };
+    setElements((prev) => {
+      const idx = prev.findIndex((e) => e.id === afterId);
+      const copy = [...prev];
+      copy.splice(idx + 1, 0, newEl);
+      return copy;
+    });
+    setActiveElId(newEl.id);
+    return newEl.id;
+  }, []);
+
+  const removeElement = useCallback((id) => {
+    setElements((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((e) => e.id === id);
+      const newEls = prev.filter((e) => e.id !== id);
+      const newActive = idx > 0 ? newEls[idx - 1].id : newEls[0].id;
+      setActiveElId(newActive);
+      return newEls;
+    });
+  }, []);
+
+  const changeElementType = useCallback((id, newType) => {
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.id !== id) return el;
+        return { ...el, type: newType, text: autoFormatText(newType, el.text) };
+      })
+    );
+  }, []);
+
+  // Key handling
+  const handleKeyDown = useCallback((e, element) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      // Auto-format current element
+      const formatted = autoFormatText(element.type, element.text);
+      if (formatted !== element.text) updateElement(element.id, formatted);
+      const nextType = getNextType(element.type);
+      insertElementAfter(element.id, nextType);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      const newType = cycleType(element.type);
+      changeElementType(element.id, newType);
+    } else if (e.key === "Backspace" && element.text === "") {
+      e.preventDefault();
+      removeElement(element.id);
+    }
+  }, [updateElement, insertElementAfter, changeElementType, removeElement]);
+
+  // Scene navigation
+  const jumpToScene = (sceneId) => {
+    setActiveElId(sceneId);
+    const el = document.getElementById(`script-el-${sceneId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  // File operations
+  const handleNew = () => {
+    setElements([{ id: uid(), type: "scene-heading", text: "" }]);
+    setActiveElId(null);
+    setScriptTitle("untitled_screenplay");
+    setMessages([]);
+    showNotification("New script created");
+  };
+
+  const handleImport = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      if (file.name.endsWith(".fdx")) {
+        setElements(parseFDX(text));
+      } else {
+        setElements(parseFountain(text));
+      }
+      setScriptTitle(file.name.replace(/\.(fountain|fdx)$/, ""));
+      showNotification(`Imported ${file.name}`);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleExportFountain = () => {
+    const content = elementsToFountain(elements, scriptTitle);
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${scriptTitle}.fountain`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotification("Exported .fountain file");
+  };
+
+  const handleExportPDF = () => {
+    // Generate printable HTML and trigger print dialog
+    const printContent = elements.map((el) => {
+      const styles = {
+        "scene-heading": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;letter-spacing:0.03em;",
+        "action": "margin-bottom:16px;",
+        "character": "text-transform:uppercase;font-weight:bold;text-align:center;margin-left:140px;margin-bottom:2px;",
+        "dialogue": "margin-left:80px;margin-right:100px;margin-bottom:16px;",
+        "parenthetical": "font-style:italic;margin-left:120px;margin-right:120px;margin-bottom:2px;color:#444;",
+        "transition": "text-transform:uppercase;text-align:right;margin-top:16px;margin-bottom:16px;",
+      };
+      return `<p style="${styles[el.type] || ""}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;">${el.text}</p>`;
+    }).join("");
+
+    const printWindow = window.open("", "_blank");
+    printWindow.document.write(`
+      <html><head><title>${scriptTitle}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap" rel="stylesheet">
+      <style>
+        @page { margin: 1in; size: letter; }
+        body { font-family: 'Courier Prime', 'Courier New', monospace; font-size: 12pt; line-height: 1.8; padding: 0; margin: 0; }
+      </style></head>
+      <body>${printContent}</body></html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); }, 500);
+    showNotification("PDF export — use Print dialog to save as PDF");
+  };
+
+  // AI Chat
+  const sendMessage = async (text) => {
+    if (!text.trim() || isStreaming) return;
+
+    const userMsg = { id: msgId(), role: "user", text: text.trim() };
+    setMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setIsStreaming(true);
+
+    // Build script context
+    const scriptText = elements.map((el) => {
+      const prefix = el.type === "scene-heading" ? "\n" : el.type === "character" ? "\n" : "";
+      return prefix + el.text;
+    }).join("\n");
+
+    const currentSceneText = `Scene ${currentScene}`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: `You are ScriptMind, an expert AI screenwriting collaborator. You have access to the writer's full screenplay and are helping them craft their story. Be specific to THEIR script — reference their characters, scenes, and dialogue by name. Be concise, insightful, and practical. Use a warm but professional tone. Format with bullet points (•) sparingly. Use *asterisks* for emphasis on key terms.
+
+CURRENT SCREENPLAY:
+${scriptText}
+
+CURRENT POSITION: ${currentSceneText}
+
+Respond concisely (2-4 short paragraphs max). Be specific to this screenplay — mention character names, scene details, etc.`,
+          messages: [
+            ...messages.filter(m => m.role).map(m => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.text
+            })),
+            { role: "user", content: text.trim() }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+      const aiText = data.content?.map(b => b.text || "").join("") || "I'd be happy to help with your screenplay. Could you tell me more about what you're working on?";
+
+      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", text: aiText }]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: msgId(),
+          role: "assistant",
+          text: "I'm having trouble connecting right now. In the meantime, I can see you're working on a compelling scene between Morgan and Cole. The tension in their dialogue is strong — Morgan's short responses are doing a lot of heavy lifting. What specifically would you like help with?",
+        },
+      ]);
+    }
+    setIsStreaming(false);
+  };
+
+  const handleRewriteScene = () => {
+    const sceneEls = [];
+    let inCurrentScene = false;
+    for (const el of elements) {
+      if (el.type === "scene-heading") {
+        if (inCurrentScene) break;
+        if (el.id === activeElId || getCurrentSceneIndex(elements, el.id) === currentScene) {
+          inCurrentScene = true;
+        }
+      }
+      if (inCurrentScene) sceneEls.push(el);
+    }
+    const sceneText = sceneEls.map((e) => e.text).join("\n");
+    sendMessage(`Please rewrite the current scene (Scene ${currentScene}) to be tighter and more impactful. Here's what I have:\n\n${sceneText}`);
+  };
+
+  const handleSuggestNext = () => {
+    sendMessage("Based on where my cursor is in the script, suggest what should come next. What's the next line or beat that would work well here?");
+  };
+
+  // Click outside to close file menu
+  useEffect(() => {
+    const handler = (e) => {
+      if (fileMenuOpen) setFileMenuOpen(false);
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [fileMenuOpen]);
+
+  return (
+    <div className="flex flex-col h-screen w-full overflow-hidden" style={{ background: "#080808", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}>
+      {/* Google Fonts */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Courier+Prime&display=swap');
+        @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+        @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+        @keyframes rotateSpark { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } 50% { box-shadow: 0 0 8px #c43e3e, 0 0 16px rgba(196,62,62,0.6); } 100% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } }
+        [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #222222; border-radius: 3px; }
+        ::selection { background: rgba(196,62,62,0.25); }
+      `}</style>
+
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+          <span style={{ color: "#c43e3e", marginRight: 6 }}>✓</span> {notification}
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".fountain,.fdx"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* ── TOP BAR ── */}
+      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderBottom: "1px solid #222222", padding: "0 16px", gap: 16 }}>
+        <div style={{
+          fontFamily: "'Playfair Display', serif", fontSize: 17, letterSpacing: "0.02em",
+          backgroundImage: "linear-gradient(90deg, #ffffff, #c43e3e, #ffffff, #c43e3e)",
+          backgroundSize: "200% auto",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          animation: "shimmer 4s linear infinite",
+        }}>
+          Script<span style={{ fontStyle: "italic" }}>Mind</span>
+        </div>
+        <div style={{ width: 1, height: 20, background: "#222222" }} />
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#888888" }}>
+          {scriptTitle}.fdx
+        </div>
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setFileMenuOpen(!fileMenuOpen)}
+              className="flex items-center gap-1"
+              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
+            >
+              <FileIcon /> File <ChevronIcon />
+            </button>
+            <FileMenu
+              isOpen={fileMenuOpen}
+              onToggle={() => setFileMenuOpen(false)}
+              onNew={handleNew}
+              onImport={handleImport}
+              onExportPDF={handleExportPDF}
+              onExportFountain={handleExportFountain}
+            />
+          </div>
+          <button
+            onClick={handleExportPDF}
+            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            <DownloadIcon /> Export PDF
+          </button>
+        </div>
+      </div>
+
+      {/* ── MAIN WORKSPACE ── */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* LEFT SIDEBAR */}
+        <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderRight: "1px solid #222222" }}>
+          <div style={{ padding: "12px 14px 8px" }}>
+            <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "#555555", marginBottom: 8 }}>
+              Scenes
+            </div>
+            <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+              {scenes.map((scene, i) => {
+                const isActive = scene.id === activeElId || getCurrentSceneIndex(elements, activeElId) === i + 1;
+                const color = isActive ? "#c43e3e" : "#555555";
+                return (
+                  <div
+                    key={scene.id}
+                    onClick={() => jumpToScene(scene.id)}
+                    className="flex items-center gap-2 cursor-pointer"
+                    style={{
+                      padding: "7px 10px", borderRadius: 4,
+                      background: isActive ? "rgba(196,62,62,0.15)" : "transparent",
+                      borderLeft: isActive ? `2px solid ${color}` : "2px solid transparent",
+                      boxShadow: isActive ? `inset 3px 0 8px -4px ${color}` : "none",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#111111"; }}
+                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span style={{
+                      fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, minWidth: 18, height: 18,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      borderRadius: "50%", backgroundColor: isActive ? "rgba(196,62,62,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
+                    }}>{i + 1}</span>
+                    <span style={{ fontSize: 12, color: isActive ? "#e8e8e8" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {scene.text || "UNTITLED SCENE"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* New Scene button */}
+          <div style={{ padding: "4px 14px" }}>
+            <button
+              onClick={() => {
+                const lastId = elements[elements.length - 1].id;
+                insertElementAfter(lastId, "scene-heading", "");
+              }}
+              className="flex items-center gap-1.5 w-full"
+              style={{ fontSize: 11, color: "#555555", background: "transparent", border: "1px dashed #222222", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#888888"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "#555555"; e.currentTarget.style.borderColor = "#222222"; }}
+            >
+              <PlusIcon /> Add Scene
+            </button>
+          </div>
+
+          <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #222222" }}>
+            {[
+              ["Pages", `${pageCount} / 110`],
+              ["Words", wordCount.toLocaleString()],
+              ["Scenes", scenes.length],
+              ["Last saved", lastSaved],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "#555555", marginBottom: 2 }}>
+                <span>{label}</span>
+                <span style={{ color: "#888888" }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── SCREENPLAY EDITOR ── */}
+        <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#0d0d0d" }}>
+          {/* Toolbar */}
+          <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#0a0a0a", borderBottom: "1px solid #222222", padding: "0 16px", gap: 4 }}>
+            {ELEMENT_TYPES.map((type) => {
+              const activeEl = elements.find((e) => e.id === activeElId);
+              const isActive = activeEl?.type === type;
+              const label = type.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+              return (
+                <button
+                  key={type}
+                  onClick={() => { if (activeElId) changeElementType(activeElId, type); }}
+                  style={{
+                    fontSize: 11, padding: "3px 9px", borderRadius: 3,
+                    background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
+                    border: isActive ? "1px solid rgba(255,255,255,0.25)" : "1px solid transparent",
+                    color: isActive ? "#e8e8e8" : "#888888",
+                    cursor: "pointer",
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    transition: "all 0.1s",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#555555" }}>
+              Page {Math.max(1, Math.ceil((elements.findIndex((e) => e.id === activeElId) + 1) / 6))} of {pageCount} · Scene {currentScene}
+            </div>
+          </div>
+
+          {/* Editor Pages */}
+          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)", gap: 40 }}>
+            {pages.map((pageEls, pageIdx) => (
+              <div
+                key={pageIdx}
+                style={{
+                  width: 680, minHeight: 880,
+                  background: "#ffffff", borderRadius: 2,
+                  padding: "72px 72px 72px 108px",
+                  boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15), 0 0 120px rgba(196,62,62,0.05)",
+                  color: "#111111",
+                  position: "relative",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#bbb", fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {pageIdx + 1}
+                </div>
+                {pageEls.map((el) => (
+                  <div key={el.id} id={`script-el-${el.id}`}>
+                    <ScriptElement
+                      element={el}
+                      isActive={el.id === activeElId}
+                      onClick={setActiveElId}
+                      onChange={updateElement}
+                      onKeyDown={handleKeyDown}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── AI PANEL ── */}
+        <div className="flex flex-col flex-shrink-0" style={{ width: 360, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderLeft: "1px solid #222222" }}>
+          {/* Header */}
+          <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid #222222", padding: "0 16px", gap: 10 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #d45555, #c43e3e)", animation: "ringPulse 2s ease-in-out infinite" }} />
+            <div style={{
+              fontSize: 13, fontWeight: 500,
+              backgroundImage: "linear-gradient(90deg, #e8e8e8, #c43e3e, #e8e8e8, #c43e3e)",
+              backgroundSize: "200% auto",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              animation: "shimmer 6s linear infinite",
+            }}>AI Collaborator</div>
+            <div className="ml-auto" style={{ fontSize: 11, padding: "3px 10px", borderRadius: 3, background: "rgba(255,255,255,0.1)", color: "#e8e8e8" }}>
+              Chat
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
+            {/* Context card */}
+            <div style={{ background: "rgba(196,62,62,0.08)", border: "1px solid rgba(196,62,62,0.2)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#888888", lineHeight: 1.5 }}>
+              <strong style={{ color: "#c43e3e", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+                📍 Current Scene Context
+              </strong>
+              Scene {currentScene} · {scenes[currentScene - 1]?.text || "Start writing"} · {
+                (() => {
+                  const chars = [];
+                  let inScene = false;
+                  for (const el of elements) {
+                    if (el.type === "scene-heading") {
+                      if (inScene) break;
+                      if (getCurrentSceneIndex(elements, el.id) === currentScene) inScene = true;
+                    }
+                    if (inScene && el.type === "character" && !chars.includes(el.text)) chars.push(el.text);
+                  }
+                  return chars.length > 0 ? chars.join(" + ") : "No characters yet";
+                })()
+              }
+            </div>
+
+            {messages.map((msg) => (
+              <AIMessage key={msg.id} msg={msg} />
+            ))}
+
+            {isStreaming && (
+              <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
+                <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(196,62,62,0.2)", color: "#c43e3e", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
+                <div className="flex-1">
+                  <div style={{ fontSize: 10, color: "#555555", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>ScriptMind</div>
+                  <div style={{ fontSize: 12.5, background: "#111111", border: "1px solid #222222", borderRadius: 6, padding: "10px 12px", color: "#c43e3e" }}>
+                    <span style={{ animation: "pulse 1s ease-in-out infinite" }}>●</span>
+                    <span style={{ animation: "pulse 1s ease-in-out infinite 0.2s" }}> ●</span>
+                    <span style={{ animation: "pulse 1s ease-in-out infinite 0.4s" }}> ●</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input Area */}
+          <div style={{ padding: 12, borderTop: "1px solid #222222" }}>
+            <div className="flex gap-1.5" style={{ marginBottom: 8 }}>
+              <button
+                onClick={handleRewriteScene}
+                disabled={isStreaming}
+                className="flex items-center gap-1"
+                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
+              >
+                <SparkleIcon /> Rewrite scene
+              </button>
+              <button
+                onClick={handleSuggestNext}
+                disabled={isStreaming}
+                className="flex items-center gap-1"
+                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
+              >
+                <SparkleIcon /> Suggest next line
+              </button>
+            </div>
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); } }}
+                placeholder="Ask anything about your script…"
+                rows={2}
+                style={{
+                  flex: 1, background: "#111111", border: "1px solid #222222",
+                  borderRadius: 6, padding: "9px 12px", fontSize: 12.5,
+                  color: "#e8e8e8", fontFamily: "inherit", resize: "none",
+                  outline: "none", lineHeight: 1.5,
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#222222"; }}
+              />
+              <button
+                onClick={() => sendMessage(chatInput)}
+                disabled={isStreaming || !chatInput.trim()}
+                style={{
+                  width: 34, height: 34, borderRadius: 6,
+                  backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #c43e3e, #d45555, #c43e3e)" : "none",
+                  backgroundColor: chatInput.trim() ? "transparent" : "#222222",
+                  backgroundSize: "200% 200%",
+                  animation: chatInput.trim() ? "gradientShift 3s ease infinite" : "none",
+                  border: "none", cursor: chatInput.trim() ? "pointer" : "default",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "white", flexShrink: 0, transition: "all 0.15s",
+                  boxShadow: chatInput.trim() ? "0 2px 12px rgba(196,62,62,0.4)" : "none",
+                }}
+              >
+                <SendIcon />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── STATUS BAR ── */}
+      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderTop: "1px solid #222222", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#555555", fontFamily: "'IBM Plex Mono', monospace" }}>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#c43e3e" }} />
+        <span>Auto-saved</span>
+        <span>·</span>
+        <span>Screenplay format</span>
+        <span>·</span>
+        <span>Industry standard ✓</span>
+        <div className="flex gap-3.5 ml-auto">
+          <span>UTF-8</span>
+          <span>Scenes: {scenes.length}</span>
+          <span>~{pageCount} pages</span>
+        </div>
+      </div>
+    </div>
+  );
+}
