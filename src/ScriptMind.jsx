@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // ─── Constants ───
-const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition"];
+const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition", "shot", "centered"];
 const TAB_CYCLE = ["action", "character", "dialogue", "action"];
 
 const DEFAULT_SCRIPT = {
@@ -63,6 +63,20 @@ const INITIAL_MESSAGES = [
 const uid = () => "el-" + Math.random().toString(36).slice(2, 9);
 const msgId = () => "m-" + Math.random().toString(36).slice(2, 9);
 
+function stripHtml(html) {
+  return html.replace(/<[^>]*>/g, "");
+}
+
+function htmlToFountain(html) {
+  return html
+    .replace(/<b>(.*?)<\/b>/gi, "**$1**")
+    .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
+    .replace(/<i>(.*?)<\/i>/gi, "*$1*")
+    .replace(/<em>(.*?)<\/em>/gi, "*$1*")
+    .replace(/<u>(.*?)<\/u>/gi, "_$1_")
+    .replace(/<[^>]*>/g, "");
+}
+
 function getScenes(elements) {
   const scenes = [];
   elements.forEach((el, idx) => {
@@ -74,7 +88,7 @@ function getScenes(elements) {
 }
 
 function getWordCount(elements) {
-  return elements.reduce((sum, el) => sum + el.text.split(/\s+/).filter(Boolean).length, 0);
+  return elements.reduce((sum, el) => sum + stripHtml(el.text).split(/\s+/).filter(Boolean).length, 0);
 }
 
 function getPageCount(elements) {
@@ -82,24 +96,11 @@ function getPageCount(elements) {
   return Math.max(1, Math.ceil(getWordCount(elements) / 250));
 }
 
-function splitIntoPages(elements, wordsPerPage = 150) {
-  const pages = [];
-  let currentPage = [];
-  let currentWordCount = 0;
-
-  for (const el of elements) {
-    const elWords = el.text.split(/\s+/).filter(Boolean).length;
-    if (currentPage.length > 0 && currentWordCount + elWords > wordsPerPage) {
-      pages.push(currentPage);
-      currentPage = [];
-      currentWordCount = 0;
-    }
-    currentPage.push(el);
-    currentWordCount += elWords;
-  }
-  if (currentPage.length > 0) pages.push(currentPage);
-  return pages;
-}
+// Page dimensions for visual page breaks
+const PAGE_HEIGHT = 880;
+const PAGE_GAP = 32;
+const HEADER_HEIGHT = 44; // Reserved header margin (page number area)
+const FOOTER_HEIGHT = 32; // Reserved footer margin
 
 function getCurrentSceneIndex(elements, activeElId) {
   let sceneIdx = 0;
@@ -116,6 +117,8 @@ function getNextType(currentType) {
   if (currentType === "parenthetical") return "dialogue";
   if (currentType === "scene-heading") return "action";
   if (currentType === "transition") return "action";
+  if (currentType === "shot") return "action";
+  if (currentType === "centered") return "action";
   return "action";
 }
 
@@ -128,40 +131,49 @@ function cycleType(currentType) {
 function autoFormatText(type, text) {
   if (type === "scene-heading") {
     let t = text.toUpperCase();
-    if (t && !t.startsWith("INT.") && !t.startsWith("EXT.") && !t.startsWith("INT/EXT") && !t.startsWith("I/E")) {
+    const plain = stripHtml(t);
+    if (plain && !plain.startsWith("INT.") && !plain.startsWith("EXT.") && !plain.startsWith("INT/EXT") && !plain.startsWith("I/E")) {
       t = "INT. " + t;
     }
     return t;
   }
   if (type === "character") return text.toUpperCase();
   if (type === "transition") return text.toUpperCase();
+  if (type === "shot") return text.toUpperCase();
   return text;
 }
 
 function elementsToFountain(elements, title = "Untitled") {
   let fountain = `Title: ${title}\nCredit: written by\nAuthor: Writer\n\n`;
   elements.forEach((el) => {
+    const text = htmlToFountain(el.text);
     switch (el.type) {
       case "scene-heading":
-        fountain += `\n${el.text}\n\n`;
+        fountain += `\n${text}\n\n`;
         break;
       case "action":
-        fountain += `${el.text}\n\n`;
+        fountain += `${text}\n\n`;
         break;
       case "character":
-        fountain += `${el.text}\n`;
+        fountain += `${text}\n`;
         break;
       case "dialogue":
-        fountain += `${el.text}\n\n`;
+        fountain += `${text}\n\n`;
         break;
       case "parenthetical":
-        fountain += `(${el.text.replace(/^\(|\)$/g, "")})\n`;
+        fountain += `(${text.replace(/^\(|\)$/g, "")})\n`;
         break;
       case "transition":
-        fountain += `> ${el.text}\n\n`;
+        fountain += `> ${text}\n\n`;
+        break;
+      case "shot":
+        fountain += `${text}\n\n`;
+        break;
+      case "centered":
+        fountain += `> ${text} <\n\n`;
         break;
       default:
-        fountain += `${el.text}\n\n`;
+        fountain += `${text}\n\n`;
     }
   });
   return fountain;
@@ -181,7 +193,10 @@ function parseFountain(text) {
   while (i < lines.length) {
     const line = lines[i].trim();
     if (!line) { i++; continue; }
-    if (line.match(/^(INT\.|EXT\.|INT\/EXT|I\/E)/i)) {
+    // Centered text: > text <
+    if (line.match(/^>.*<$/)) {
+      elements.push({ id: uid(), type: "centered", text: line.replace(/^>\s*/, "").replace(/\s*<$/, "") });
+    } else if (line.match(/^(INT\.|EXT\.|INT\/EXT|I\/E)/i)) {
       elements.push({ id: uid(), type: "scene-heading", text: line.toUpperCase() });
     } else if (line.startsWith(">") && !line.startsWith(">>")) {
       elements.push({ id: uid(), type: "transition", text: line.replace(/^>\s*/, "").toUpperCase() });
@@ -227,6 +242,8 @@ function parseFDX(xmlText) {
       "Dialogue": "dialogue",
       "Parenthetical": "parenthetical",
       "Transition": "transition",
+      "Shot": "shot",
+      "General": "centered",
     };
     elements.push({ id: uid(), type: typeMap[pType] || "action", text: text.trim() });
   });
@@ -298,8 +315,34 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
   }, [isActive]);
 
   const handleInput = (e) => {
-    let text = e.currentTarget.textContent || "";
-    onChange(element.id, text);
+    const html = e.currentTarget.innerHTML || "";
+    // If there are no HTML tags, store as plain text; otherwise store HTML
+    const hasFormatting = /<(b|i|u|strong|em)>/i.test(html);
+    onChange(element.id, hasFormatting ? html : (e.currentTarget.textContent || ""));
+  };
+
+  const handleKeyDownLocal = (e) => {
+    // Bold / Italic / Underline
+    if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+      e.preventDefault();
+      document.execCommand("bold");
+      // Trigger input to save state
+      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "i") {
+      e.preventDefault();
+      document.execCommand("italic");
+      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "u") {
+      e.preventDefault();
+      document.execCommand("underline");
+      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    onKeyDown(e, element);
   };
 
   const typeStyles = {
@@ -309,17 +352,35 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
     "dialogue": "text-left",
     "parenthetical": "italic text-left",
     "transition": "uppercase text-right font-semibold",
+    "shot": "uppercase font-semibold text-left",
+    "centered": "text-center",
   };
 
   // Industry-standard screenplay margins (500px content area)
-  // Character cue at ~37% from left, dialogue/parenthetical symmetrically indented
+  // Based on standard page: 8.5"x11", 1.5" left margin, 1.0" right margin = 6.0" print width
+  // Character at 3.7" from left edge = 2.2" indent = ~183px
+  // Dialogue: 2.5" to 6.0" from left edge = 1.0" to 1.5" indent = 83px / 125px
+  // Parenthetical: 3.1" to 5.6" = 1.6" to 1.9" indent = 133px / 158px
   const margins = {
     "scene-heading": { marginLeft: 0, marginRight: 0, marginBottom: 4 },
     "action":        { marginLeft: 0, marginRight: 0, marginBottom: 16 },
     "character":     { marginLeft: 185, marginRight: 0, marginBottom: 2 },
-    "dialogue":      { marginLeft: 85, marginRight: 85, marginBottom: 16 },
-    "parenthetical": { marginLeft: 135, marginRight: 135, marginBottom: 2 },
+    "dialogue":      { marginLeft: 83, marginRight: 125, marginBottom: 16 },
+    "parenthetical": { marginLeft: 133, marginRight: 158, marginBottom: 2 },
     "transition":    { marginLeft: 0, marginRight: 0, marginTop: 16, marginBottom: 16 },
+    "shot":          { marginLeft: 0, marginRight: 0, marginBottom: 4 },
+    "centered":      { marginLeft: 0, marginRight: 0, marginBottom: 16 },
+  };
+
+  const placeholders = {
+    "scene-heading": "INT./EXT. LOCATION — TIME",
+    "action": "Describe what we see...",
+    "character": "CHARACTER NAME",
+    "dialogue": "Dialogue...",
+    "parenthetical": "(beat)",
+    "transition": "CUT TO:",
+    "shot": "ANGLE ON — SUBJECT",
+    "centered": "Centered text",
   };
 
   const style = margins[element.type] || {};
@@ -333,7 +394,7 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
       style={{
         ...style,
         fontFamily: "'Courier Prime', 'Courier New', Courier, monospace",
-        fontSize: "13.5px",
+        fontSize: "12pt",
         lineHeight: "1.85",
         minHeight: "1.85em",
         whiteSpace: "pre-wrap",
@@ -341,12 +402,11 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
       }}
       onClick={() => onClick(element.id)}
       onInput={handleInput}
-      onKeyDown={(e) => onKeyDown(e, element)}
+      onKeyDown={handleKeyDownLocal}
       spellCheck
-      data-placeholder={element.type === "scene-heading" ? "INT./EXT. LOCATION — TIME" : element.type === "action" ? "Describe what we see..." : element.type === "character" ? "CHARACTER NAME" : element.type === "dialogue" ? "Dialogue..." : element.type === "parenthetical" ? "(beat)" : "CUT TO:"}
-    >
-      {element.text}
-    </div>
+      data-placeholder={placeholders[element.type] || ""}
+      dangerouslySetInnerHTML={{ __html: element.text }}
+    />
   );
 }
 
@@ -416,7 +476,7 @@ function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, isOpen, onTo
     >
       {[
         { label: "New Script", icon: "✦", action: onNew },
-        { label: "Import .fountain / .fdx", icon: "↑", action: onImport },
+        { label: "Import screenplay", icon: "↑", action: onImport },
         { label: "─", divider: true },
         { label: "Export as PDF", icon: "↓", action: onExportPDF },
         { label: "Export as .fountain", icon: "↓", action: onExportFountain },
@@ -456,6 +516,7 @@ export default function ScriptMind() {
   const [lastSaved, setLastSaved] = useState("just now");
   const [scriptTitle, setScriptTitle] = useState("untitled_screenplay");
   const [notification, setNotification] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -466,13 +527,22 @@ export default function ScriptMind() {
   const wordCount = useMemo(() => getWordCount(elements), [elements]);
   const pageCount = useMemo(() => getPageCount(elements), [elements]);
   const currentScene = useMemo(() => getCurrentSceneIndex(elements, activeElId), [elements, activeElId]);
-  const pages = useMemo(() => splitIntoPages(elements), [elements]);
+  const contentRef = useRef(null);
+  const [numPages, setNumPages] = useState(1);
 
   // Auto-save simulation
   useEffect(() => {
     const interval = setInterval(() => setLastSaved("just now"), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Measure content and calculate number of pages
+  useEffect(() => {
+    if (contentRef.current) {
+      const h = contentRef.current.scrollHeight;
+      setNumPages(Math.max(1, Math.ceil(h / PAGE_HEIGHT)));
+    }
+  }, [elements]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -561,22 +631,62 @@ export default function ScriptMind() {
 
   const handleImport = () => fileInputRef.current?.click();
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const processFile = (file) => {
     if (!file) return;
+    const name = file.name.toLowerCase();
+    const validExts = [".fountain", ".fdx", ".txt"];
+    if (!validExts.some((ext) => name.endsWith(ext))) {
+      showNotification("Unsupported format — use .fountain, .fdx, or .txt");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      if (file.name.endsWith(".fdx")) {
+      if (name.endsWith(".fdx")) {
         setElements(parseFDX(text));
       } else {
         setElements(parseFountain(text));
       }
-      setScriptTitle(file.name.replace(/\.(fountain|fdx)$/, ""));
+      setScriptTitle(file.name.replace(/\.(fountain|fdx|txt)$/, ""));
       showNotification(`Imported ${file.name}`);
     };
     reader.readAsText(file);
+  };
+
+  const handleFileChange = (e) => {
+    processFile(e.target.files?.[0]);
     e.target.value = "";
+  };
+
+  // Drag & drop handlers
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items?.length > 0) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setIsDragging(false);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    const file = e.dataTransfer.files?.[0];
+    processFile(file);
   };
 
   const handleExportFountain = () => {
@@ -597,10 +707,12 @@ export default function ScriptMind() {
       const styles = {
         "scene-heading": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;letter-spacing:0.03em;",
         "action": "margin-bottom:16px;",
-        "character": "text-transform:uppercase;font-weight:bold;text-align:center;margin-left:140px;margin-bottom:2px;",
-        "dialogue": "margin-left:80px;margin-right:100px;margin-bottom:16px;",
-        "parenthetical": "font-style:italic;margin-left:120px;margin-right:120px;margin-bottom:2px;color:#444;",
+        "character": "text-transform:uppercase;font-weight:bold;margin-left:2.2in;margin-bottom:2px;",
+        "dialogue": "margin-left:1in;margin-right:1.5in;margin-bottom:16px;",
+        "parenthetical": "font-style:italic;margin-left:1.6in;margin-right:1.9in;margin-bottom:2px;color:#444;",
         "transition": "text-transform:uppercase;text-align:right;margin-top:16px;margin-bottom:16px;",
+        "shot": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;",
+        "centered": "text-align:center;margin-bottom:16px;",
       };
       return `<p style="${styles[el.type] || ""}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;">${el.text}</p>`;
     }).join("");
@@ -632,7 +744,7 @@ export default function ScriptMind() {
     // Build script context
     const scriptText = elements.map((el) => {
       const prefix = el.type === "scene-heading" ? "\n" : el.type === "character" ? "\n" : "";
-      return prefix + el.text;
+      return prefix + stripHtml(el.text);
     }).join("\n");
 
     const currentSceneText = `Scene ${currentScene}`;
@@ -691,7 +803,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       }
       if (inCurrentScene) sceneEls.push(el);
     }
-    const sceneText = sceneEls.map((e) => e.text).join("\n");
+    const sceneText = sceneEls.map((e) => stripHtml(e.text)).join("\n");
     sendMessage(`Please rewrite the current scene (Scene ${currentScene}) to be tighter and more impactful. Here's what I have:\n\n${sceneText}`);
   };
 
@@ -709,7 +821,14 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
   }, [fileMenuOpen]);
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden" style={{ background: "#080808", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}>
+    <div
+      className="flex flex-col h-screen w-full overflow-hidden"
+      style={{ background: "#080808", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Google Fonts */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Courier+Prime&display=swap');
@@ -735,11 +854,32 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         </div>
       )}
 
+      {/* Drag & drop overlay */}
+      {isDragging && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
+          <div className="flex flex-col items-center gap-4" style={{ animation: "fadeUp 0.2s ease" }}>
+            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #c43e3e", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#c43e3e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: "#e8e8e8" }}>
+              Drop your screenplay here
+            </div>
+            <div style={{ fontSize: 13, color: "#888888" }}>
+              .fountain, .fdx, or .txt files supported
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
-        accept=".fountain,.fdx"
+        accept=".fountain,.fdx,.txt"
         onChange={handleFileChange}
         className="hidden"
       />
@@ -822,7 +962,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       borderRadius: "50%", backgroundColor: isActive ? "rgba(196,62,62,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
                     }}>{i + 1}</span>
                     <span style={{ fontSize: 12, color: isActive ? "#e8e8e8" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {scene.text || "UNTITLED SCENE"}
+                      {stripHtml(scene.text) || "UNTITLED SCENE"}
                     </span>
                   </div>
                 );
@@ -887,30 +1027,79 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 </button>
               );
             })}
+            {/* Formatting separator + B/I/U buttons */}
+            <div style={{ width: 1, height: 18, background: "#222222", margin: "0 4px" }} />
+            {[
+              { label: "B", cmd: "bold", style: { fontWeight: 700 } },
+              { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
+              { label: "U", cmd: "underline", style: { textDecoration: "underline" } },
+            ].map((fmt) => (
+              <button
+                key={fmt.cmd}
+                onClick={() => { document.execCommand(fmt.cmd); }}
+                style={{
+                  fontSize: 12, padding: "3px 7px", borderRadius: 3,
+                  background: "transparent", border: "1px solid transparent",
+                  color: "#888888", cursor: "pointer",
+                  fontFamily: "'Courier Prime', 'Courier New', monospace",
+                  transition: "all 0.1s", ...fmt.style,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#e8e8e8"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
+                title={`${fmt.cmd.charAt(0).toUpperCase() + fmt.cmd.slice(1)} (⌘${fmt.label})`}
+              >
+                {fmt.label}
+              </button>
+            ))}
             <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#555555" }}>
               Page {Math.max(1, Math.ceil((elements.findIndex((e) => e.id === activeElId) + 1) / 6))} of {pageCount} · Scene {currentScene}
             </div>
           </div>
 
-          {/* Editor Pages */}
-          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)", gap: 40 }}>
-            {pages.map((pageEls, pageIdx) => (
-              <div
-                key={pageIdx}
-                style={{
-                  width: 680, minHeight: 880,
-                  background: "#ffffff", borderRadius: 2,
-                  padding: "72px 72px 72px 108px",
+          {/* Editor — continuous flow with page gaps */}
+          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)" }}>
+            <div style={{ position: "relative", width: 680, flexShrink: 0 }}>
+              {/* SVG clipPath — clips content to body area only (excludes header/footer margins) */}
+              <svg width="0" height="0" style={{ position: "absolute" }}>
+                <defs>
+                  <clipPath id="page-clip">
+                    {Array.from({ length: numPages }, (_, i) => {
+                      // Page 1: top padding in content div handles header; just clip footer
+                      // Pages 2+: clip both header and footer areas so content stays in the body
+                      const yStart = i * (PAGE_HEIGHT + PAGE_GAP) + (i === 0 ? 0 : HEADER_HEIGHT);
+                      const height = i === 0 ? PAGE_HEIGHT - FOOTER_HEIGHT : PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT;
+                      return <rect key={i} x="0" y={yStart} width="680" height={height} rx="2" />;
+                    })}
+                  </clipPath>
+                </defs>
+              </svg>
+              {/* White page backgrounds with shadow (behind content — full page area) */}
+              {Array.from({ length: numPages }, (_, i) => (
+                <div key={`page-${i}`} style={{
+                  position: "absolute",
+                  top: i * (PAGE_HEIGHT + PAGE_GAP),
+                  left: 0, width: 680, height: PAGE_HEIGHT,
+                  borderRadius: 2,
+                  background: "#ffffff",
                   boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15), 0 0 120px rgba(196,62,62,0.05)",
+                  pointerEvents: "none",
+                }} />
+              ))}
+              {/* Content — continuous flow, clipped to body areas of each page */}
+              <div
+                ref={contentRef}
+                style={{
+                  width: 680,
+                  minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP,
+                  background: "#ffffff",
+                  borderRadius: 2,
+                  padding: "72px 72px 72px 108px",
                   color: "#111111",
                   position: "relative",
-                  flexShrink: 0,
+                  clipPath: "url(#page-clip)",
                 }}
               >
-                <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#bbb", fontFamily: "'IBM Plex Mono', monospace" }}>
-                  {pageIdx + 1}
-                </div>
-                {pageEls.map((el) => (
+                {elements.map((el) => (
                   <div key={el.id} id={`script-el-${el.id}`}>
                     <ScriptElement
                       element={el}
@@ -922,7 +1111,34 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   </div>
                 ))}
               </div>
-            ))}
+              {/* Page headers & footers — overlaid on top of content */}
+              {Array.from({ length: numPages }, (_, i) => (
+                <div key={`page-hf-${i}`} style={{ position: "absolute", top: i * (PAGE_HEIGHT + PAGE_GAP), left: 0, width: 680, height: PAGE_HEIGHT, pointerEvents: "none", zIndex: 2 }}>
+                  {/* Header area — page number (pages 2+) */}
+                  {i > 0 && (
+                    <div style={{
+                      position: "absolute", top: 0, left: 0, right: 0, height: HEADER_HEIGHT,
+                      padding: "0 72px 0 108px",
+                      display: "flex", alignItems: "flex-end", justifyContent: "flex-end",
+                    }}>
+                      <span style={{
+                        fontFamily: "'Courier Prime', 'Courier New', monospace",
+                        fontSize: "12pt",
+                        color: "#333333",
+                        paddingBottom: 4,
+                      }}>
+                        {i + 1}.
+                      </span>
+                    </div>
+                  )}
+                  {/* Footer area — reserved for (MORE)/(CONT'D) markers */}
+                  <div style={{
+                    position: "absolute", bottom: 0, left: 0, right: 0, height: FOOTER_HEIGHT,
+                    padding: "0 72px 0 108px",
+                  }} />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -951,7 +1167,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               <strong style={{ color: "#c43e3e", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
                 📍 Current Scene Context
               </strong>
-              Scene {currentScene} · {scenes[currentScene - 1]?.text || "Start writing"} · {
+              Scene {currentScene} · {stripHtml(scenes[currentScene - 1]?.text || "Start writing")} · {
                 (() => {
                   const chars = [];
                   let inScene = false;
@@ -960,7 +1176,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       if (inScene) break;
                       if (getCurrentSceneIndex(elements, el.id) === currentScene) inScene = true;
                     }
-                    if (inScene && el.type === "character" && !chars.includes(el.text)) chars.push(el.text);
+                    if (inScene && el.type === "character" && !chars.includes(stripHtml(el.text))) chars.push(stripHtml(el.text));
                   }
                   return chars.length > 0 ? chars.join(" + ") : "No characters yet";
                 })()
