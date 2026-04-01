@@ -298,11 +298,11 @@ function ChevronIcon({ direction = "down" }) {
 // ─── Screenplay Element Component ───
 function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, activeType }) {
   const ref = useRef(null);
+  const isEditingRef = useRef(false);
 
   useEffect(() => {
     if (isActive && ref.current) {
       ref.current.focus();
-      // Place cursor at end
       const range = document.createRange();
       const sel = window.getSelection();
       if (ref.current.childNodes.length > 0) {
@@ -314,11 +314,21 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
     }
   }, [isActive]);
 
+  // Sync innerHTML from state on mount and when text changes externally
+  // (e.g. type change, auto-format) — skip during active user editing
+  useEffect(() => {
+    if (ref.current && !isEditingRef.current) {
+      ref.current.innerHTML = element.text;
+    }
+  }, [element.text, element.type]);
+
   const handleInput = (e) => {
+    isEditingRef.current = true;
     const html = e.currentTarget.innerHTML || "";
-    // If there are no HTML tags, store as plain text; otherwise store HTML
     const hasFormatting = /<(b|i|u|strong|em)>/i.test(html);
     onChange(element.id, hasFormatting ? html : (e.currentTarget.textContent || ""));
+    // Reset editing flag after React state update
+    requestAnimationFrame(() => { isEditingRef.current = false; });
   };
 
   const handleKeyDownLocal = (e) => {
@@ -326,7 +336,6 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
     if ((e.metaKey || e.ctrlKey) && e.key === "b") {
       e.preventDefault();
       document.execCommand("bold");
-      // Trigger input to save state
       ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
@@ -405,7 +414,7 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
       onKeyDown={handleKeyDownLocal}
       spellCheck
       data-placeholder={placeholders[element.type] || ""}
-      dangerouslySetInnerHTML={{ __html: element.text }}
+      ref={ref}
     />
   );
 }
@@ -507,14 +516,27 @@ function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, isOpen, onTo
 
 // ─── Main App ───
 export default function ScriptMind() {
-  const [elements, setElements] = useState(DEFAULT_SCRIPT.elements);
-  const [activeElId, setActiveElId] = useState("el-14");
+  const [elements, setElements] = useState(() => {
+    try {
+      const saved = localStorage.getItem("scriptmind_elements");
+      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
+    } catch { return DEFAULT_SCRIPT.elements; }
+  });
+  const [activeElId, setActiveElId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("scriptmind_elements");
+      const els = saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
+      return els[0]?.id || "el-1";
+    } catch { return "el-1"; }
+  });
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [chatInput, setChatInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [lastSaved, setLastSaved] = useState("just now");
-  const [scriptTitle, setScriptTitle] = useState("untitled_screenplay");
+  const [scriptTitle, setScriptTitle] = useState(() => {
+    return localStorage.getItem("scriptmind_title") || "untitled_screenplay";
+  });
   const [notification, setNotification] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -529,12 +551,20 @@ export default function ScriptMind() {
   const currentScene = useMemo(() => getCurrentSceneIndex(elements, activeElId), [elements, activeElId]);
   const contentRef = useRef(null);
   const [numPages, setNumPages] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageBreakMarkers, setPageBreakMarkers] = useState([]); // [{pageIndex, characterName}]
 
-  // Auto-save simulation
+  // Auto-save to localStorage
   useEffect(() => {
-    const interval = setInterval(() => setLastSaved("just now"), 30000);
-    return () => clearInterval(interval);
-  }, []);
+    const timeout = setTimeout(() => {
+      try {
+        localStorage.setItem("scriptmind_elements", JSON.stringify(elements));
+        localStorage.setItem("scriptmind_title", scriptTitle);
+        setLastSaved("just now");
+      } catch { /* storage full — silent fail */ }
+    }, 500); // debounce 500ms
+    return () => clearTimeout(timeout);
+  }, [elements, scriptTitle]);
 
   // Measure content and calculate number of pages
   useEffect(() => {
@@ -543,6 +573,49 @@ export default function ScriptMind() {
       setNumPages(Math.max(1, Math.ceil(h / PAGE_HEIGHT)));
     }
   }, [elements]);
+
+  // Calculate which visual page the active element is on
+  useEffect(() => {
+    if (!activeElId || !contentRef.current) return;
+    const el = document.getElementById(`script-el-${activeElId}`);
+    if (!el) return;
+    const offsetTop = el.offsetTop;
+    const page = Math.floor(offsetTop / (PAGE_HEIGHT + PAGE_GAP)) + 1;
+    setCurrentPage(Math.min(page, numPages));
+  }, [activeElId, numPages]);
+
+  // Compute (MORE)/(CONT'D) markers: detect dialogue crossing page boundaries
+  useEffect(() => {
+    if (!contentRef.current || numPages <= 1) { setPageBreakMarkers([]); return; }
+    const markers = [];
+    for (let p = 0; p < numPages - 1; p++) {
+      const breakY = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP;
+      // Find the last character name before this break point
+      let lastCharName = null;
+      let dialogueCrossesBreak = false;
+      for (const el of elements) {
+        const dom = document.getElementById(`script-el-${el.id}`);
+        if (!dom) continue;
+        const top = dom.offsetTop;
+        const bottom = top + dom.offsetHeight;
+        if (el.type === "character") lastCharName = stripHtml(el.text);
+        if (el.type !== "character" && el.type !== "dialogue" && el.type !== "parenthetical") {
+          if (top > breakY) break;
+          lastCharName = null;
+        }
+        // Dialogue block crosses page break
+        if ((el.type === "dialogue" || el.type === "parenthetical") && lastCharName && top < breakY && bottom > breakY) {
+          dialogueCrossesBreak = true;
+          break;
+        }
+        if (top > breakY) break;
+      }
+      if (dialogueCrossesBreak && lastCharName) {
+        markers.push({ pageIndex: p, characterName: lastCharName });
+      }
+    }
+    setPageBreakMarkers(markers);
+  }, [elements, numPages]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -988,7 +1061,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
 
           <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #222222" }}>
             {[
-              ["Pages", `${pageCount} / 110`],
+              ["Pages", `${numPages} / 110`],
               ["Words", wordCount.toLocaleString()],
               ["Scenes", scenes.length],
               ["Last saved", lastSaved],
@@ -1052,7 +1125,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               </button>
             ))}
             <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#555555" }}>
-              Page {Math.max(1, Math.ceil((elements.findIndex((e) => e.id === activeElId) + 1) / 6))} of {pageCount} · Scene {currentScene}
+              Page {currentPage} of {numPages} · Scene {currentScene}
             </div>
           </div>
 
@@ -1119,8 +1192,17 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                     <div style={{
                       position: "absolute", top: 0, left: 0, right: 0, height: HEADER_HEIGHT,
                       padding: "0 72px 0 108px",
-                      display: "flex", alignItems: "flex-end", justifyContent: "flex-end",
+                      display: "flex", alignItems: "flex-end", justifyContent: "space-between",
                     }}>
+                      {(() => {
+                        const marker = pageBreakMarkers.find(m => m.pageIndex === i - 1);
+                        return marker ? (
+                          <span style={{
+                            fontFamily: "'Courier Prime', 'Courier New', monospace",
+                            fontSize: "12pt", color: "#333333", paddingBottom: 4,
+                          }}>{marker.characterName} (CONT'D)</span>
+                        ) : <span />;
+                      })()}
                       <span style={{
                         fontFamily: "'Courier Prime', 'Courier New', monospace",
                         fontSize: "12pt",
@@ -1131,11 +1213,19 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       </span>
                     </div>
                   )}
-                  {/* Footer area — reserved for (MORE)/(CONT'D) markers */}
+                  {/* Footer area — (MORE) marker when dialogue continues to next page */}
                   <div style={{
                     position: "absolute", bottom: 0, left: 0, right: 0, height: FOOTER_HEIGHT,
                     padding: "0 72px 0 108px",
-                  }} />
+                    display: "flex", alignItems: "flex-start", justifyContent: "center",
+                  }}>
+                    {pageBreakMarkers.some(m => m.pageIndex === i) && (
+                      <span style={{
+                        fontFamily: "'Courier Prime', 'Courier New', monospace",
+                        fontSize: "12pt", color: "#333333",
+                      }}>(MORE)</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1277,7 +1367,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         <div className="flex gap-3.5 ml-auto">
           <span>UTF-8</span>
           <span>Scenes: {scenes.length}</span>
-          <span>~{pageCount} pages</span>
+          <span>{numPages} pages</span>
         </div>
       </div>
     </div>
