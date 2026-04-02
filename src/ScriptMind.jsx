@@ -355,7 +355,7 @@ function ChevronIcon({ direction = "down" }) {
 }
 
 // ─── Screenplay Element Component ───
-function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, activeType }) {
+function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneNumber }) {
   const ref = useRef(null);
   const isEditingRef = useRef(false);
 
@@ -453,7 +453,7 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
 
   const style = margins[element.type] || {};
 
-  return (
+  const editable = (
     <div
       ref={ref}
       contentEditable
@@ -473,9 +473,42 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, active
       onKeyDown={handleKeyDownLocal}
       spellCheck
       data-placeholder={placeholders[element.type] || ""}
-      ref={ref}
     />
   );
+
+  if (element.type === "scene-heading" && sceneNumber != null) {
+    return (
+      <div style={{ position: "relative", ...margins[element.type] }}>
+        <span style={{
+          position: "absolute", left: -48, top: 0,
+          fontFamily: "'Courier Prime', 'Courier New', monospace",
+          fontSize: "12pt", lineHeight: "1.85", fontWeight: 600, color: "#111",
+        }}>{sceneNumber}</span>
+        <div
+          ref={ref}
+          contentEditable
+          suppressContentEditableWarning
+          className={`outline-none cursor-text ${typeStyles[element.type] || ""} ${isActive ? "ring-1 ring-red-400/30 rounded px-1 -mx-1 bg-red-50/50" : ""}`}
+          style={{
+            fontFamily: "'Courier Prime', 'Courier New', Courier, monospace",
+            fontSize: "12pt", lineHeight: "1.85", minHeight: "1.85em", whiteSpace: "pre-wrap",
+          }}
+          onClick={() => onClick(element.id)}
+          onInput={handleInput}
+          onKeyDown={handleKeyDownLocal}
+          spellCheck
+          data-placeholder={placeholders[element.type] || ""}
+        />
+        <span style={{
+          position: "absolute", right: -48, top: 0,
+          fontFamily: "'Courier Prime', 'Courier New', monospace",
+          fontSize: "12pt", lineHeight: "1.85", fontWeight: 600, color: "#111",
+        }}>{sceneNumber}</span>
+      </div>
+    );
+  }
+
+  return editable;
 }
 
 // ─── AI Message Component ───
@@ -666,6 +699,12 @@ export default function ScriptMind() {
   const pageCount = useMemo(() => getPageCount(elements), [elements]);
   const currentScene = useMemo(() => getCurrentSceneIndex(elements, activeElId), [elements, activeElId]);
   const activeElement = useMemo(() => elements.find(e => e.id === activeElId), [elements, activeElId]);
+  const sceneNumberMap = useMemo(() => {
+    const map = {};
+    let num = 0;
+    elements.forEach(el => { if (el.type === "scene-heading") { num++; map[el.id] = num; } });
+    return map;
+  }, [elements]);
   const suggestions = useMemo(() => getSmartSuggestions(elements, activeElement), [elements, activeElement]);
   const contentRef = useRef(null);
   const [numPages, setNumPages] = useState(1);
@@ -702,6 +741,38 @@ export default function ScriptMind() {
     const page = Math.floor(offsetTop / (PAGE_HEIGHT + PAGE_GAP)) + 1;
     setCurrentPage(Math.min(page, numPages));
   }, [activeElId, numPages]);
+
+  // Push elements out of dead zones (footer/gap/header) at page boundaries
+  useEffect(() => {
+    if (!contentRef.current || numPages <= 1) return;
+    // Clear previous adjustments
+    elements.forEach(el => {
+      const dom = document.getElementById(`script-el-${el.id}`);
+      if (dom) dom.style.paddingTop = "";
+    });
+    for (let p = 0; p < numPages - 1; p++) {
+      // Page p body ends here (content clipped after this)
+      const bodyEnd = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP - FOOTER_HEIGHT;
+      // Page p+1 body starts here (content visible again)
+      const nextBodyStart = (p + 1) * (PAGE_HEIGHT + PAGE_GAP) + HEADER_HEIGHT;
+      for (const el of elements) {
+        const dom = document.getElementById(`script-el-${el.id}`);
+        if (!dom) continue;
+        const top = dom.offsetTop;
+        const bottom = top + dom.offsetHeight;
+        if (top >= bodyEnd && top < nextBodyStart) {
+          // Element starts in dead zone — push down
+          dom.style.paddingTop = `${nextBodyStart - top}px`;
+          break;
+        }
+        if (top < bodyEnd && bottom > bodyEnd) {
+          // Element crosses into dead zone — push whole element to next page
+          dom.style.paddingTop = `${nextBodyStart - top}px`;
+          break;
+        }
+      }
+    }
+  }, [elements, numPages]);
 
   // Compute (MORE)/(CONT'D) markers: detect dialogue crossing page boundaries
   useEffect(() => {
@@ -944,9 +1015,11 @@ export default function ScriptMind() {
 
   const handleExportPDF = () => {
     // Generate printable HTML and trigger print dialog
+    let pdfSceneNum = 0;
     const printContent = elements.map((el) => {
+      if (el.type === "scene-heading") pdfSceneNum++;
       const styles = {
-        "scene-heading": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;letter-spacing:0.03em;",
+        "scene-heading": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;letter-spacing:0.03em;position:relative;",
         "action": "margin-bottom:16px;",
         "character": "text-transform:uppercase;font-weight:bold;margin-left:2.2in;margin-bottom:2px;",
         "dialogue": "margin-left:1in;margin-right:1.5in;margin-bottom:16px;",
@@ -955,6 +1028,9 @@ export default function ScriptMind() {
         "shot": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;",
         "centered": "text-align:center;margin-bottom:16px;",
       };
+      if (el.type === "scene-heading") {
+        return `<p style="${styles[el.type]}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;"><span style="position:absolute;left:-0.6in;">${pdfSceneNum}</span>${el.text}<span style="float:right;margin-right:-0.6in;">${pdfSceneNum}</span></p>`;
+      }
       return `<p style="${styles[el.type] || ""}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;">${el.text}</p>`;
     }).join("");
 
@@ -1356,9 +1432,10 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 <defs>
                   <clipPath id="page-clip">
                     {Array.from({ length: numPages }, (_, i) => {
-                      // Page 1: top padding in content div handles header; just clip footer
-                      // Pages 2+: clip both header and footer areas so content stays in the body
-                      const yStart = i * (PAGE_HEIGHT + PAGE_GAP) + (i === 0 ? 0 : HEADER_HEIGHT);
+                      // Content flows continuously; clip rects must account for the gap
+                      // accumulated from page backgrounds being spaced with PAGE_GAP
+                      const pageTop = i * (PAGE_HEIGHT + PAGE_GAP);
+                      const yStart = pageTop + (i === 0 ? 0 : HEADER_HEIGHT);
                       const height = i === 0 ? PAGE_HEIGHT - FOOTER_HEIGHT : PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT;
                       return <rect key={i} x="0" y={yStart} width="680" height={height} rx="2" />;
                     })}
@@ -1399,6 +1476,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       onClick={setActiveElId}
                       onChange={updateElement}
                       onKeyDown={handleKeyDown}
+                      sceneNumber={sceneNumberMap[el.id]}
                     />
                     {/* SmartType autocomplete dropdown */}
                     {el.id === activeElId && suggestions.length > 0 && (
