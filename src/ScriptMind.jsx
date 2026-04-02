@@ -51,6 +51,15 @@ const DEFAULT_SCRIPT = {
   ],
 };
 
+const DEFAULT_TITLE_PAGE = {
+  title: "Untitled Screenplay",
+  credit: "written by",
+  author: "Writer",
+  source: "",
+  draftDate: "",
+  contact: "",
+};
+
 const INITIAL_MESSAGES = [
   {
     id: "m-1",
@@ -94,6 +103,51 @@ function getWordCount(elements) {
 function getPageCount(elements) {
   // Rough: ~250 words per page for screenplay
   return Math.max(1, Math.ceil(getWordCount(elements) / 250));
+}
+
+// ─── SmartType Autocomplete ───
+const COMMON_TRANSITIONS = ["CUT TO:", "FADE OUT.", "FADE IN:", "SMASH CUT TO:", "MATCH CUT TO:", "JUMP CUT TO:", "DISSOLVE TO:", "TIME CUT:", "FREEZE FRAME"];
+const SCENE_PREFIXES = ["INT. ", "EXT. ", "INT./EXT. ", "I/E. "];
+const TIMES_OF_DAY = [" — DAY", " — NIGHT", " — DAWN", " — DUSK", " — MORNING", " — AFTERNOON", " — EVENING", " — LATER", " — CONTINUOUS", " — MOMENTS LATER"];
+
+function getSmartSuggestions(elements, currentEl) {
+  if (!currentEl) return [];
+  const query = stripHtml(currentEl.text).toUpperCase();
+
+  if (currentEl.type === "character") {
+    const names = [...new Set(
+      elements.filter(e => e.type === "character").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
+    )];
+    if (!query) return names.slice(0, 8);
+    return names.filter(n => n.startsWith(query) && n !== query).slice(0, 6);
+  }
+
+  if (currentEl.type === "scene-heading") {
+    // If empty or just started, suggest prefixes
+    if (!query || query.length <= 3) {
+      const prefixMatches = SCENE_PREFIXES.filter(p => p.startsWith(query));
+      if (prefixMatches.length > 0) return prefixMatches;
+    }
+    // If we have a prefix, suggest known locations
+    const locations = [...new Set(
+      elements.filter(e => e.type === "scene-heading").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
+    )];
+    // Also suggest times of day if location is partially typed
+    const hasTime = TIMES_OF_DAY.some(t => query.includes(t.trim()));
+    if (!hasTime && query.length > 5) {
+      const timeMatches = TIMES_OF_DAY.map(t => query + t);
+      const locMatches = locations.filter(l => l.startsWith(query) && l !== query);
+      return [...locMatches, ...timeMatches].slice(0, 6);
+    }
+    return locations.filter(l => l.startsWith(query) && l !== query).slice(0, 6);
+  }
+
+  if (currentEl.type === "transition") {
+    if (!query) return COMMON_TRANSITIONS.slice(0, 6);
+    return COMMON_TRANSITIONS.filter(t => t.startsWith(query) && t !== query).slice(0, 6);
+  }
+
+  return [];
 }
 
 // Page dimensions for visual page breaks
@@ -143,8 +197,13 @@ function autoFormatText(type, text) {
   return text;
 }
 
-function elementsToFountain(elements, title = "Untitled") {
-  let fountain = `Title: ${title}\nCredit: written by\nAuthor: Writer\n\n`;
+function elementsToFountain(elements, title = "Untitled", tp = null) {
+  const t = tp || DEFAULT_TITLE_PAGE;
+  let fountain = `Title: ${t.title || title}\nCredit: ${t.credit || "written by"}\nAuthor: ${t.author || "Writer"}\n`;
+  if (t.source) fountain += `Source: ${t.source}\n`;
+  if (t.draftDate) fountain += `Draft date: ${t.draftDate}\n`;
+  if (t.contact) fountain += `Contact: ${t.contact}\n`;
+  fountain += "\n";
   elements.forEach((el) => {
     const text = htmlToFountain(el.text);
     switch (el.type) {
@@ -470,8 +529,55 @@ function AIMessage({ msg }) {
   );
 }
 
+// ─── Title Page Editor Modal ───
+function TitlePageEditor({ titlePage, onChange, onClose }) {
+  const fields = [
+    { key: "title", label: "Title" },
+    { key: "credit", label: "Credit" },
+    { key: "author", label: "Author" },
+    { key: "source", label: "Source Material" },
+    { key: "draftDate", label: "Draft Date" },
+    { key: "contact", label: "Contact Info" },
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 420, background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", animation: "fadeUp 0.2s ease" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
+          <span style={{ fontSize: 14, fontWeight: 500, color: "#e8e8e8" }}>Title Page</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        {fields.map(({ key, label }) => (
+          <div key={key} style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#555", marginBottom: 4 }}>{label}</label>
+            {key === "contact" ? (
+              <textarea
+                value={titlePage[key]}
+                onChange={(e) => onChange({ ...titlePage, [key]: e.target.value })}
+                rows={2}
+                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", resize: "none", outline: "none" }}
+                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
+                placeholder="Agent / Manager / Email"
+              />
+            ) : (
+              <input
+                value={titlePage[key]}
+                onChange={(e) => onChange({ ...titlePage, [key]: e.target.value })}
+                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", outline: "none", boxSizing: "border-box" }}
+                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
+                placeholder={label}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── File Menu Dropdown ───
-function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, isOpen, onToggle }) {
+function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, onTitlePage, isOpen, onToggle }) {
   if (!isOpen) return null;
   return (
     <div
@@ -485,6 +591,7 @@ function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, isOpen, onTo
     >
       {[
         { label: "New Script", icon: "✦", action: onNew },
+        { label: "Title Page", icon: "◇", action: onTitlePage },
         { label: "Import screenplay", icon: "↑", action: onImport },
         { label: "─", divider: true },
         { label: "Export as PDF", icon: "↓", action: onExportPDF },
@@ -539,6 +646,15 @@ export default function ScriptMind() {
   });
   const [notification, setNotification] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [titlePage, setTitlePage] = useState(() => {
+    try {
+      const saved = localStorage.getItem("scriptmind_titlepage");
+      return saved ? JSON.parse(saved) : DEFAULT_TITLE_PAGE;
+    } catch { return DEFAULT_TITLE_PAGE; }
+  });
+  const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
+
+  const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -549,6 +665,8 @@ export default function ScriptMind() {
   const wordCount = useMemo(() => getWordCount(elements), [elements]);
   const pageCount = useMemo(() => getPageCount(elements), [elements]);
   const currentScene = useMemo(() => getCurrentSceneIndex(elements, activeElId), [elements, activeElId]);
+  const activeElement = useMemo(() => elements.find(e => e.id === activeElId), [elements, activeElId]);
+  const suggestions = useMemo(() => getSmartSuggestions(elements, activeElement), [elements, activeElement]);
   const contentRef = useRef(null);
   const [numPages, setNumPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -560,11 +678,12 @@ export default function ScriptMind() {
       try {
         localStorage.setItem("scriptmind_elements", JSON.stringify(elements));
         localStorage.setItem("scriptmind_title", scriptTitle);
+        localStorage.setItem("scriptmind_titlepage", JSON.stringify(titlePage));
         setLastSaved("just now");
       } catch { /* storage full — silent fail */ }
     }, 500); // debounce 500ms
     return () => clearTimeout(timeout);
-  }, [elements, scriptTitle]);
+  }, [elements, scriptTitle, titlePage]);
 
   // Measure content and calculate number of pages
   useEffect(() => {
@@ -667,8 +786,56 @@ export default function ScriptMind() {
     );
   }, []);
 
+  // Accept autocomplete suggestion
+  const acceptSuggestion = useCallback((text) => {
+    if (!activeElId) return;
+    updateElement(activeElId, text);
+    setAcIndex(-1);
+    // Focus and move cursor to end after React re-render
+    requestAnimationFrame(() => {
+      const dom = document.getElementById(`script-el-${activeElId}`);
+      const editable = dom?.querySelector("[contenteditable]");
+      if (editable) {
+        editable.innerHTML = text;
+        editable.focus();
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(editable);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+  }, [activeElId, updateElement]);
+
+  // Reset autocomplete index when active element or suggestions change
+  useEffect(() => { setAcIndex(-1); }, [activeElId, suggestions.length]);
+
   // Key handling
   const handleKeyDown = useCallback((e, element) => {
+    // Autocomplete navigation
+    if (suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAcIndex(prev => Math.min(prev + 1, suggestions.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAcIndex(prev => Math.max(prev - 1, -1));
+        return;
+      }
+      if ((e.key === "Tab" || e.key === "Enter") && acIndex >= 0 && !e.shiftKey) {
+        e.preventDefault();
+        acceptSuggestion(suggestions[acIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        setAcIndex(-1);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       // Auto-format current element
@@ -684,7 +851,7 @@ export default function ScriptMind() {
       e.preventDefault();
       removeElement(element.id);
     }
-  }, [updateElement, insertElementAfter, changeElementType, removeElement]);
+  }, [updateElement, insertElementAfter, changeElementType, removeElement, suggestions, acIndex, acceptSuggestion]);
 
   // Scene navigation
   const jumpToScene = (sceneId) => {
@@ -698,6 +865,7 @@ export default function ScriptMind() {
     setElements([{ id: uid(), type: "scene-heading", text: "" }]);
     setActiveElId(null);
     setScriptTitle("untitled_screenplay");
+    setTitlePage(DEFAULT_TITLE_PAGE);
     setMessages([]);
     showNotification("New script created");
   };
@@ -763,7 +931,7 @@ export default function ScriptMind() {
   };
 
   const handleExportFountain = () => {
-    const content = elementsToFountain(elements, scriptTitle);
+    const content = elementsToFountain(elements, scriptTitle, titlePage);
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -790,6 +958,22 @@ export default function ScriptMind() {
       return `<p style="${styles[el.type] || ""}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;">${el.text}</p>`;
     }).join("");
 
+    // Title page HTML
+    const tp = titlePage;
+    const titlePageHtml = `
+      <div style="page-break-after:always;height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;font-family:'Courier Prime','Courier New',monospace;font-size:12pt;text-align:center;">
+        <div style="margin-bottom:2em;">
+          <div style="font-size:24pt;font-weight:bold;margin-bottom:0.5em;">${tp.title || scriptTitle}</div>
+          ${tp.credit ? `<div style="margin-bottom:0.3em;">${tp.credit}</div>` : ""}
+          ${tp.author ? `<div style="font-weight:bold;">${tp.author}</div>` : ""}
+          ${tp.source ? `<div style="margin-top:1em;">Based on ${tp.source}</div>` : ""}
+        </div>
+        <div style="position:absolute;bottom:2in;right:1.5in;text-align:left;font-size:10pt;">
+          ${tp.draftDate ? `<div>${tp.draftDate}</div>` : ""}
+          ${tp.contact ? `<div style="white-space:pre-line;">${tp.contact}</div>` : ""}
+        </div>
+      </div>`;
+
     const printWindow = window.open("", "_blank");
     printWindow.document.write(`
       <html><head><title>${scriptTitle}</title>
@@ -798,7 +982,7 @@ export default function ScriptMind() {
         @page { margin: 1in; size: letter; }
         body { font-family: 'Courier Prime', 'Courier New', monospace; font-size: 12pt; line-height: 1.8; padding: 0; margin: 0; }
       </style></head>
-      <body>${printContent}</body></html>
+      <body>${titlePageHtml}${printContent}</body></html>
     `);
     printWindow.document.close();
     setTimeout(() => { printWindow.print(); }, 500);
@@ -920,6 +1104,11 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         ::selection { background: rgba(196,62,62,0.25); }
       `}</style>
 
+      {/* Title Page Editor Modal */}
+      {showTitlePageEditor && (
+        <TitlePageEditor titlePage={titlePage} onChange={setTitlePage} onClose={() => setShowTitlePageEditor(false)} />
+      )}
+
       {/* Notification */}
       {notification && (
         <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
@@ -987,6 +1176,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               isOpen={fileMenuOpen}
               onToggle={() => setFileMenuOpen(false)}
               onNew={handleNew}
+              onTitlePage={() => setShowTitlePageEditor(true)}
               onImport={handleImport}
               onExportPDF={handleExportPDF}
               onExportFountain={handleExportFountain}
@@ -1131,6 +1321,35 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
 
           {/* Editor — continuous flow with page gaps */}
           <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)" }}>
+            {/* Visual Title Page */}
+            <div
+              onClick={() => setShowTitlePageEditor(true)}
+              style={{
+                width: 680, height: PAGE_HEIGHT, marginBottom: PAGE_GAP, borderRadius: 2, cursor: "pointer",
+                background: "#ffffff", position: "relative", flexShrink: 0,
+                boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)",
+                display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
+                fontFamily: "'Courier Prime', 'Courier New', monospace", color: "#111",
+                transition: "box-shadow 0.2s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.3)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)"; }}
+            >
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "24pt", fontWeight: "bold", marginBottom: 8 }}>{titlePage.title || "Untitled"}</div>
+                {titlePage.credit && <div style={{ fontSize: "12pt", marginBottom: 4 }}>{titlePage.credit}</div>}
+                {titlePage.author && <div style={{ fontSize: "12pt", fontWeight: "bold" }}>{titlePage.author}</div>}
+                {titlePage.source && <div style={{ fontSize: "12pt", marginTop: 16 }}>Based on {titlePage.source}</div>}
+              </div>
+              {(titlePage.draftDate || titlePage.contact) && (
+                <div style={{ position: "absolute", bottom: 72, right: 72, textAlign: "left", fontSize: "10pt" }}>
+                  {titlePage.draftDate && <div>{titlePage.draftDate}</div>}
+                  {titlePage.contact && <div style={{ whiteSpace: "pre-line" }}>{titlePage.contact}</div>}
+                </div>
+              )}
+              <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#aaa", opacity: 0.6 }}>Click to edit</div>
+            </div>
+
             <div style={{ position: "relative", width: 680, flexShrink: 0 }}>
               {/* SVG clipPath — clips content to body area only (excludes header/footer margins) */}
               <svg width="0" height="0" style={{ position: "absolute" }}>
@@ -1173,7 +1392,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 }}
               >
                 {elements.map((el) => (
-                  <div key={el.id} id={`script-el-${el.id}`}>
+                  <div key={el.id} id={`script-el-${el.id}`} style={{ position: "relative" }}>
                     <ScriptElement
                       element={el}
                       isActive={el.id === activeElId}
@@ -1181,6 +1400,35 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       onChange={updateElement}
                       onKeyDown={handleKeyDown}
                     />
+                    {/* SmartType autocomplete dropdown */}
+                    {el.id === activeElId && suggestions.length > 0 && (
+                      <div style={{
+                        position: "absolute", left: 0, top: "100%", zIndex: 20,
+                        background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
+                        overflow: "hidden", marginTop: 2,
+                      }}>
+                        {suggestions.map((s, i) => (
+                          <div
+                            key={i}
+                            onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(s); }}
+                            onMouseEnter={() => setAcIndex(i)}
+                            style={{
+                              padding: "6px 12px", fontSize: 12, cursor: "pointer",
+                              fontFamily: "'Courier Prime', 'Courier New', monospace",
+                              background: i === acIndex ? "rgba(196,62,62,0.25)" : "transparent",
+                              color: i === acIndex ? "#e8e8e8" : "#aaa",
+                              borderLeft: i === acIndex ? "2px solid #c43e3e" : "2px solid transparent",
+                            }}
+                          >
+                            {s}
+                          </div>
+                        ))}
+                        <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #222" }}>
+                          ↑↓ navigate · Tab/Enter accept · Esc dismiss
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
