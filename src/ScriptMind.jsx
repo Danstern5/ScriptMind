@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { jsPDF } from "jspdf";
 
 // ─── Constants ───
 const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition", "shot", "centered"];
@@ -74,6 +75,100 @@ const msgId = () => "m-" + Math.random().toString(36).slice(2, 9);
 
 function stripHtml(html) {
   return html.replace(/<[^>]*>/g, "");
+}
+
+function escapeXml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function htmlToFdxTextNodes(html) {
+  const plain = html.replace(/<br\s*\/?>/gi, "\n");
+  const parts = [];
+  const tagRe = /<(b|strong|i|em|u)>(.*?)<\/\1>/gi;
+  let last = 0;
+  let m;
+  while ((m = tagRe.exec(plain)) !== null) {
+    if (m.index > last) {
+      const text = plain.slice(last, m.index).replace(/<[^>]*>/g, "");
+      if (text) parts.push({ style: "", text });
+    }
+    const tag = m[1].toLowerCase();
+    const style = (tag === "b" || tag === "strong") ? "Bold" : tag === "i" || tag === "em" ? "Italic" : "Underline";
+    parts.push({ style, text: m[2].replace(/<[^>]*>/g, "") });
+    last = m.index + m[0].length;
+  }
+  if (last < plain.length) {
+    const text = plain.slice(last).replace(/<[^>]*>/g, "");
+    if (text) parts.push({ style: "", text });
+  }
+  if (parts.length === 0) parts.push({ style: "", text: plain.replace(/<[^>]*>/g, "") });
+  return parts.map(p =>
+    p.style
+      ? `<Text Style="${p.style}">${escapeXml(p.text)}</Text>`
+      : `<Text>${escapeXml(p.text)}</Text>`
+  ).join("");
+}
+
+const FDX_TYPE_MAP = {
+  "scene-heading": "Scene Heading",
+  "action": "Action",
+  "character": "Character",
+  "dialogue": "Dialogue",
+  "parenthetical": "Parenthetical",
+  "transition": "Transition",
+  "shot": "Shot",
+  "centered": "Action",
+};
+
+function elementsToFDX(elements, title = "Untitled", tp = null) {
+  const t = tp || { title, credit: "written by", author: "Writer", source: "", draftDate: "", contact: "" };
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<FinalDraft DocumentType="Script" Template="No" Version="5">\n`;
+  xml += `  <Content>\n`;
+  const collectFdxGroup = (startIdx) => {
+    const group = [startIdx];
+    for (let j = startIdx + 1; j < elements.length; j++) {
+      if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
+      else break;
+    }
+    return group;
+  };
+  const writeParagraph = (el, dualPos) => {
+    const fdxType = FDX_TYPE_MAP[el.type] || "Action";
+    const alignment = el.type === "centered" ? ` Alignment="Center"` : "";
+    const pos = dualPos ? ` Position="${dualPos}"` : "";
+    xml += `    <Paragraph Type="${fdxType}"${alignment}${pos}>\n`;
+    xml += `      ${htmlToFdxTextNodes(el.text)}\n`;
+    xml += `    </Paragraph>\n`;
+  };
+  let fi = 0;
+  while (fi < elements.length) {
+    const el = elements[fi];
+    if (el.type === "character" && !el.dual) {
+      const leftGroup = collectFdxGroup(fi);
+      const nextIdx = leftGroup[leftGroup.length - 1] + 1;
+      if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
+        const rightGroup = collectFdxGroup(nextIdx);
+        for (const idx of leftGroup) writeParagraph(elements[idx], "Left");
+        for (const idx of rightGroup) writeParagraph(elements[idx], "Right");
+        fi = rightGroup[rightGroup.length - 1] + 1;
+        continue;
+      }
+    }
+    writeParagraph(el, null);
+    fi++;
+  }
+  xml += `  </Content>\n`;
+  xml += `  <TitlePage>\n    <Content>\n`;
+  xml += `      <Paragraph Type="Title"><Text>${escapeXml(t.title || title)}</Text></Paragraph>\n`;
+  if (t.credit) xml += `      <Paragraph Type="Credit"><Text>${escapeXml(t.credit)}</Text></Paragraph>\n`;
+  if (t.author) xml += `      <Paragraph Type="Author"><Text>${escapeXml(t.author)}</Text></Paragraph>\n`;
+  if (t.source) xml += `      <Paragraph Type="Source"><Text>${escapeXml(t.source)}</Text></Paragraph>\n`;
+  if (t.draftDate) xml += `      <Paragraph Type="Draft Date"><Text>${escapeXml(t.draftDate)}</Text></Paragraph>\n`;
+  if (t.contact) xml += `      <Paragraph Type="Contact"><Text>${escapeXml(t.contact)}</Text></Paragraph>\n`;
+  xml += `    </Content>\n  </TitlePage>\n`;
+  xml += `</FinalDraft>\n`;
+  return xml;
 }
 
 function htmlToFountain(html) {
@@ -214,7 +309,7 @@ function elementsToFountain(elements, title = "Untitled", tp = null) {
         fountain += `${text}\n\n`;
         break;
       case "character":
-        fountain += `${text}\n`;
+        fountain += el.dual ? `${text} ^\n` : `${text}\n`;
         break;
       case "dialogue":
         fountain += `${text}\n\n`;
@@ -354,8 +449,46 @@ function ChevronIcon({ direction = "down" }) {
   );
 }
 
+// ─── Context Menu Component ───
+function ContextMenu({ x, y, items, onClose }) {
+  useEffect(() => {
+    const handler = () => onClose();
+    window.addEventListener("click", handler);
+    window.addEventListener("contextmenu", handler);
+    return () => { window.removeEventListener("click", handler); window.removeEventListener("contextmenu", handler); };
+  }, [onClose]);
+  return (
+    <div
+      style={{
+        position: "fixed", left: x, top: y, zIndex: 100,
+        background: "#1a1a1a", border: "1px solid #333", borderRadius: 6,
+        padding: 4, minWidth: 180, boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+      }}
+    >
+      {items.map((item, i) => (
+        <button
+          key={i}
+          onClick={(e) => { e.stopPropagation(); item.action(); onClose(); }}
+          className="w-full text-left"
+          style={{
+            padding: "6px 12px", borderRadius: 4, border: "none",
+            background: "transparent", color: item.checked ? "#e8e8e8" : "#888888",
+            fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: 8,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#333"; e.currentTarget.style.color = "#e8e8e8"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = item.checked ? "#e8e8e8" : "#888888"; }}
+        >
+          <span style={{ width: 14, fontSize: 11 }}>{item.checked ? "✓" : ""}</span>
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Screenplay Element Component ───
-function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneNumber }) {
+function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneNumber, isDualColumn }) {
   const ref = useRef(null);
   const isEditingRef = useRef(false);
 
@@ -429,7 +562,7 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneN
   // Character at 3.7" from left edge = 2.2" indent = ~183px
   // Dialogue: 2.5" to 6.0" from left edge = 1.0" to 1.5" indent = 83px / 125px
   // Parenthetical: 3.1" to 5.6" = 1.6" to 1.9" indent = 133px / 158px
-  const margins = {
+  const fullMargins = {
     "scene-heading": { marginLeft: 0, marginRight: 0, marginBottom: 4 },
     "action":        { marginLeft: 0, marginRight: 0, marginBottom: 16 },
     "character":     { marginLeft: 185, marginRight: 0, marginBottom: 2 },
@@ -439,6 +572,12 @@ function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneN
     "shot":          { marginLeft: 0, marginRight: 0, marginBottom: 4 },
     "centered":      { marginLeft: 0, marginRight: 0, marginBottom: 16 },
   };
+  const dualMargins = {
+    "character":     { marginLeft: 0, marginRight: 0, marginBottom: 2, textAlign: "center" },
+    "dialogue":      { marginLeft: 8, marginRight: 8, marginBottom: 8 },
+    "parenthetical": { marginLeft: 16, marginRight: 16, marginBottom: 2 },
+  };
+  const margins = isDualColumn ? { ...fullMargins, ...dualMargins } : fullMargins;
 
   const placeholders = {
     "scene-heading": "INT./EXT. LOCATION — TIME",
@@ -564,6 +703,8 @@ function AIMessage({ msg }) {
 
 // ─── Title Page Editor Modal ───
 function TitlePageEditor({ titlePage, onChange, onClose }) {
+  const [local, setLocal] = useState({ ...titlePage });
+  const handleClose = () => { onChange(local); onClose(); };
   const fields = [
     { key: "title", label: "Title" },
     { key: "credit", label: "Credit" },
@@ -573,19 +714,19 @@ function TitlePageEditor({ titlePage, onChange, onClose }) {
     { key: "contact", label: "Contact Info" },
   ];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "none" }} onClick={handleClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 420, background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", animation: "fadeUp 0.2s ease" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
           <span style={{ fontSize: 14, fontWeight: 500, color: "#e8e8e8" }}>Title Page</span>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
+          <button onClick={handleClose} style={{ background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
         {fields.map(({ key, label }) => (
           <div key={key} style={{ marginBottom: 14 }}>
             <label style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#555", marginBottom: 4 }}>{label}</label>
             {key === "contact" ? (
               <textarea
-                value={titlePage[key]}
-                onChange={(e) => onChange({ ...titlePage, [key]: e.target.value })}
+                value={local[key]}
+                onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
                 rows={2}
                 style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", resize: "none", outline: "none" }}
                 onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
@@ -594,8 +735,8 @@ function TitlePageEditor({ titlePage, onChange, onClose }) {
               />
             ) : (
               <input
-                value={titlePage[key]}
-                onChange={(e) => onChange({ ...titlePage, [key]: e.target.value })}
+                value={local[key]}
+                onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
                 style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", outline: "none", boxSizing: "border-box" }}
                 onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
                 onBlur={(e) => { e.target.style.borderColor = "#222"; }}
@@ -609,8 +750,52 @@ function TitlePageEditor({ titlePage, onChange, onClose }) {
   );
 }
 
+function RenameCharacterModal({ oldName, onRename, onClose }) {
+  const [newName, setNewName] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "none" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#111111", border: "1px solid #222222", borderRadius: 10, padding: 24, width: 360, boxShadow: "0 16px 64px rgba(0,0,0,0.6)" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#e8e8e8", marginBottom: 16 }}>Rename Character</div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 11, color: "#555555", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Current Name</label>
+          <input
+            value={oldName}
+            readOnly
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #222222", background: "#0a0a0a", color: "#888888", fontSize: 13, fontFamily: "'Courier Prime', monospace", boxSizing: "border-box" }}
+          />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 11, color: "#555555", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>New Name</label>
+          <input
+            autoFocus
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newName.trim()) onRename(oldName, newName);
+              if (e.key === "Escape") onClose();
+            }}
+            placeholder="Enter new name..."
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #333", background: "#0a0a0a", color: "#e8e8e8", fontSize: 13, fontFamily: "'Courier Prime', monospace", boxSizing: "border-box", outline: "none" }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{ padding: "6px 16px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+          >Cancel</button>
+          <button
+            onClick={() => newName.trim() && onRename(oldName, newName)}
+            disabled={!newName.trim()}
+            style={{ padding: "6px 16px", borderRadius: 4, border: "none", background: newName.trim() ? "#c43e3e" : "#333", color: "#fff", fontSize: 12, cursor: newName.trim() ? "pointer" : "default", fontFamily: "inherit", fontWeight: 500 }}
+          >Rename</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── File Menu Dropdown ───
-function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, onTitlePage, isOpen, onToggle }) {
+function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, onExportFDX, onTitlePage, isOpen, onToggle }) {
   if (!isOpen) return null;
   return (
     <div
@@ -629,6 +814,7 @@ function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, onTitlePage,
         { label: "─", divider: true },
         { label: "Export as PDF", icon: "↓", action: onExportPDF },
         { label: "Export as .fountain", icon: "↓", action: onExportFountain },
+        { label: "Export as .fdx", icon: "↓", action: onExportFDX },
       ].map((item, i) =>
         item.divider ? (
           <div key={i} style={{ height: 1, background: "#222222", margin: "4px 0" }} />
@@ -679,6 +865,8 @@ export default function ScriptMind() {
   });
   const [notification, setNotification] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [renameModal, setRenameModal] = useState(null); // { oldName, newName }
   const [titlePage, setTitlePage] = useState(() => {
     try {
       const saved = localStorage.getItem("scriptmind_titlepage");
@@ -857,6 +1045,46 @@ export default function ScriptMind() {
     );
   }, []);
 
+  const toggleDual = useCallback((id) => {
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.id !== id || el.type !== "character") return el;
+        const next = { ...el };
+        if (next.dual) delete next.dual; else next.dual = true;
+        return next;
+      })
+    );
+  }, []);
+
+  const renameCharacter = useCallback((oldName, newName) => {
+    if (!oldName.trim() || !newName.trim()) return;
+    const oldUpper = oldName.trim().toUpperCase();
+    const newTrimmed = newName.trim();
+    const escaped = oldName.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`\\b${escaped}\\b`, "gi");
+    let count = 0;
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.type === "character") {
+          const plain = stripHtml(el.text).trim().toUpperCase();
+          if (plain === oldUpper) {
+            count++;
+            return { ...el, text: newTrimmed.toUpperCase() };
+          }
+          return el;
+        }
+        // Other elements: only replace if there's a match
+        const replaced = el.text.replace(pattern, newTrimmed);
+        if (replaced !== el.text) {
+          count++;
+          return { ...el, text: replaced };
+        }
+        return el;
+      })
+    );
+    showNotification(`Renamed "${oldName.trim()}" → "${newTrimmed}" (${count} elements updated)`);
+  }, []);
+
   // Accept autocomplete suggestion
   const acceptSuggestion = useCallback((text) => {
     if (!activeElId) return;
@@ -881,6 +1109,29 @@ export default function ScriptMind() {
 
   // Reset autocomplete index when active element or suggestions change
   useEffect(() => { setAcIndex(-1); }, [activeElId, suggestions.length]);
+
+  // Right-click context menu for character elements
+  useEffect(() => {
+    const handler = (e) => {
+      let node = e.target;
+      while (node && node !== document) {
+        const match = node.id?.match?.(/^script-el-(.+)$/);
+        if (match) {
+          const elId = match[1];
+          const el = elements.find((x) => x.id === elId);
+          if (el?.type === "character") {
+            e.preventDefault();
+            e.stopPropagation();
+            setContextMenu({ x: e.clientX, y: e.clientY, elId: el.id, isDual: !!el.dual });
+            return;
+          }
+        }
+        node = node.parentElement;
+      }
+    };
+    document.addEventListener("contextmenu", handler, true);
+    return () => document.removeEventListener("contextmenu", handler, true);
+  }, [elements]);
 
   // Key handling
   const handleKeyDown = useCallback((e, element) => {
@@ -1013,56 +1264,221 @@ export default function ScriptMind() {
     showNotification("Exported .fountain file");
   };
 
+  const handleExportFDX = () => {
+    const content = elementsToFDX(elements, scriptTitle, titlePage);
+    const blob = new Blob([content], { type: "application/xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${scriptTitle}.fdx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotification("Exported .fdx file (Final Draft)");
+  };
+
   const handleExportPDF = () => {
-    // Generate printable HTML and trigger print dialog
-    let pdfSceneNum = 0;
-    const printContent = elements.map((el) => {
-      if (el.type === "scene-heading") pdfSceneNum++;
-      const styles = {
-        "scene-heading": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;letter-spacing:0.03em;position:relative;",
-        "action": "margin-bottom:16px;",
-        "character": "text-transform:uppercase;font-weight:bold;margin-left:2.2in;margin-bottom:2px;",
-        "dialogue": "margin-left:1in;margin-right:1.5in;margin-bottom:16px;",
-        "parenthetical": "font-style:italic;margin-left:1.6in;margin-right:1.9in;margin-bottom:2px;color:#444;",
-        "transition": "text-transform:uppercase;text-align:right;margin-top:16px;margin-bottom:16px;",
-        "shot": "text-transform:uppercase;font-weight:bold;margin-bottom:4px;",
-        "centered": "text-align:center;margin-bottom:16px;",
-      };
-      if (el.type === "scene-heading") {
-        return `<p style="${styles[el.type]}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;"><span style="position:absolute;left:-0.6in;">${pdfSceneNum}</span>${el.text}<span style="float:right;margin-right:-0.6in;">${pdfSceneNum}</span></p>`;
+    const doc = new jsPDF({ unit: "in", format: "letter" });
+    const PAGE_W = 8.5, PAGE_H = 11;
+    const ML = 1.5, MR = 1, MT = 1, MB = 1; // screenplay standard margins
+    const BODY_W = PAGE_W - ML - MR;
+    const FONT_SIZE = 12;
+    const LINE_H = FONT_SIZE * 1.6 / 72; // ~0.267in per line
+
+    const stripHtml = (html) => html.replace(/<[^>]*>/g, "");
+
+    // Element-specific left indents and max widths (in inches from left margin)
+    const elLayout = {
+      "scene-heading":  { indent: 0, width: BODY_W, upper: true, bold: true },
+      "action":         { indent: 0, width: BODY_W },
+      "character":      { indent: 2.2, width: BODY_W - 2.2, upper: true, bold: true },
+      "dialogue":       { indent: 1, width: 3.5 },
+      "parenthetical":  { indent: 1.6, width: 2.1 },
+      "transition":     { indent: 0, width: BODY_W, upper: true, align: "right" },
+      "shot":           { indent: 0, width: BODY_W, upper: true, bold: true },
+      "centered":       { indent: 0, width: BODY_W, align: "center" },
+    };
+
+    let pageNum = 0;
+    let y = MT;
+    let sceneNum = 0;
+
+    const newPage = () => {
+      if (pageNum > 0) doc.addPage();
+      pageNum++;
+      y = MT;
+    };
+
+    const checkPageBreak = (needed) => {
+      if (y + needed > PAGE_H - MB) {
+        // Page number footer
+        doc.setFont("Courier", "normal");
+        doc.setFontSize(10);
+        doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
+        newPage();
       }
-      return `<p style="${styles[el.type] || ""}font-family:'Courier Prime','Courier New',monospace;font-size:12pt;line-height:1.8;">${el.text}</p>`;
-    }).join("");
+    };
 
-    // Title page HTML
+    const writeLines = (text, layout) => {
+      doc.setFont("Courier", layout.bold ? "bold" : "normal");
+      doc.setFontSize(FONT_SIZE);
+      let str = stripHtml(text);
+      if (layout.upper) str = str.toUpperCase();
+      const maxW = layout.width;
+      const lines = doc.splitTextToSize(str, maxW);
+      for (const line of lines) {
+        checkPageBreak(LINE_H);
+        const xBase = ML + layout.indent;
+        if (layout.align === "right") {
+          doc.text(line, ML + BODY_W, y, { align: "right" });
+        } else if (layout.align === "center") {
+          doc.text(line, ML + BODY_W / 2, y, { align: "center" });
+        } else {
+          doc.text(line, xBase, y);
+        }
+        y += LINE_H;
+      }
+    };
+
+    // ── Title Page ──
+    newPage();
     const tp = titlePage;
-    const titlePageHtml = `
-      <div style="page-break-after:always;height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;font-family:'Courier Prime','Courier New',monospace;font-size:12pt;text-align:center;">
-        <div style="margin-bottom:2em;">
-          <div style="font-size:24pt;font-weight:bold;margin-bottom:0.5em;">${tp.title || scriptTitle}</div>
-          ${tp.credit ? `<div style="margin-bottom:0.3em;">${tp.credit}</div>` : ""}
-          ${tp.author ? `<div style="font-weight:bold;">${tp.author}</div>` : ""}
-          ${tp.source ? `<div style="margin-top:1em;">Based on ${tp.source}</div>` : ""}
-        </div>
-        <div style="position:absolute;bottom:2in;right:1.5in;text-align:left;font-size:10pt;">
-          ${tp.draftDate ? `<div>${tp.draftDate}</div>` : ""}
-          ${tp.contact ? `<div style="white-space:pre-line;">${tp.contact}</div>` : ""}
-        </div>
-      </div>`;
+    doc.setFont("Courier", "bold");
+    doc.setFontSize(24);
+    const titleText = tp.title || scriptTitle;
+    doc.text(titleText, PAGE_W / 2, 4, { align: "center" });
+    doc.setFontSize(FONT_SIZE);
+    doc.setFont("Courier", "normal");
+    let titleY = 4.5;
+    if (tp.credit) { doc.text(tp.credit, PAGE_W / 2, titleY, { align: "center" }); titleY += 0.3; }
+    if (tp.author) { doc.setFont("Courier", "bold"); doc.text(tp.author, PAGE_W / 2, titleY, { align: "center" }); doc.setFont("Courier", "normal"); titleY += 0.3; }
+    if (tp.source) { doc.text(`Based on ${tp.source}`, PAGE_W / 2, titleY, { align: "center" }); }
+    // Bottom-right contact block
+    let contactY = PAGE_H - 2;
+    doc.setFontSize(10);
+    if (tp.draftDate) { doc.text(tp.draftDate, PAGE_W - MR - 1, contactY); contactY += 0.25; }
+    if (tp.contact) {
+      const contactLines = tp.contact.split("\n");
+      for (const cl of contactLines) { doc.text(cl, PAGE_W - MR - 1, contactY); contactY += 0.25; }
+    }
 
-    const printWindow = window.open("", "_blank");
-    printWindow.document.write(`
-      <html><head><title>${scriptTitle}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap" rel="stylesheet">
-      <style>
-        @page { margin: 1in; size: letter; }
-        body { font-family: 'Courier Prime', 'Courier New', monospace; font-size: 12pt; line-height: 1.8; padding: 0; margin: 0; }
-      </style></head>
-      <body>${titlePageHtml}${printContent}</body></html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => { printWindow.print(); }, 500);
-    showNotification("PDF export — use Print dialog to save as PDF");
+    // ── Screenplay Content ──
+    newPage();
+    const SPACING_AFTER = {
+      "scene-heading": LINE_H,
+      "action": LINE_H,
+      "character": 0,
+      "dialogue": LINE_H,
+      "parenthetical": 0,
+      "transition": LINE_H,
+      "shot": LINE_H,
+      "centered": LINE_H,
+    };
+
+    // Collect dialogue group indices starting from a character element
+    const collectPdfGroup = (startIdx) => {
+      const group = [startIdx];
+      for (let j = startIdx + 1; j < elements.length; j++) {
+        if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
+        else break;
+      }
+      return group;
+    };
+
+    // Measure how many lines a group would take
+    const measureGroup = (indices) => {
+      let lines = 0;
+      for (const idx of indices) {
+        const el = elements[idx];
+        const layout = elLayout[el.type] || elLayout["action"];
+        let str = stripHtml(el.text);
+        if (layout.upper) str = str.toUpperCase();
+        doc.setFont("Courier", layout.bold ? "bold" : "normal");
+        doc.setFontSize(FONT_SIZE);
+        lines += doc.splitTextToSize(str, layout.width).length;
+      }
+      return lines;
+    };
+
+    // Write lines at a specific x offset with a given max width (for dual dialogue columns)
+    const writeLinesAt = (text, layout, xOffset, maxW) => {
+      doc.setFont("Courier", layout.bold ? "bold" : "normal");
+      doc.setFontSize(FONT_SIZE);
+      let str = stripHtml(text);
+      if (layout.upper) str = str.toUpperCase();
+      const lines = doc.splitTextToSize(str, maxW);
+      for (const line of lines) {
+        checkPageBreak(LINE_H);
+        doc.text(line, xOffset, y);
+        y += LINE_H;
+      }
+    };
+
+    let ei = 0;
+    while (ei < elements.length) {
+      const el = elements[ei];
+
+      // Detect dual dialogue pair
+      if (el.type === "character" && !el.dual) {
+        const leftGroup = collectPdfGroup(ei);
+        const nextIdx = leftGroup[leftGroup.length - 1] + 1;
+        if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
+          const rightGroup = collectPdfGroup(nextIdx);
+          const HALF = BODY_W / 2 - 0.1;
+          const leftLines = measureGroup(leftGroup);
+          const rightLines = measureGroup(rightGroup);
+          const totalLines = Math.max(leftLines, rightLines);
+          checkPageBreak(totalLines * LINE_H);
+          const startY = y;
+          // Left column
+          for (const idx of leftGroup) {
+            const ge = elements[idx];
+            const gl = ge.type === "character"
+              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
+              : ge.type === "parenthetical"
+              ? { indent: 0.3, width: HALF - 0.6 }
+              : { indent: 0, width: HALF };
+            writeLinesAt(ge.text, gl, ML + gl.indent, gl.width);
+          }
+          const leftEndY = y;
+          // Right column
+          y = startY;
+          for (const idx of rightGroup) {
+            const ge = elements[idx];
+            const gl = ge.type === "character"
+              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
+              : ge.type === "parenthetical"
+              ? { indent: 0.3, width: HALF - 0.6 }
+              : { indent: 0, width: HALF };
+            writeLinesAt(ge.text, gl, ML + HALF + 0.2 + gl.indent, gl.width);
+          }
+          y = Math.max(leftEndY, y) + LINE_H;
+          ei = rightGroup[rightGroup.length - 1] + 1;
+          continue;
+        }
+      }
+
+      const layout = elLayout[el.type] || elLayout["action"];
+      if (el.type === "scene-heading") {
+        sceneNum++;
+        if (y > MT + LINE_H) y += LINE_H;
+        checkPageBreak(LINE_H * 2);
+        doc.setFont("Courier", "bold");
+        doc.setFontSize(FONT_SIZE);
+        doc.text(`${sceneNum}`, ML - 0.5, y, { align: "right" });
+        doc.text(`${sceneNum}`, ML + BODY_W + 0.15, y);
+      }
+      writeLines(el.text, layout);
+      y += SPACING_AFTER[el.type] ?? LINE_H;
+      ei++;
+    }
+
+    // Final page number
+    doc.setFont("Courier", "normal");
+    doc.setFontSize(10);
+    doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
+
+    doc.save(`${scriptTitle}.pdf`);
+    showNotification("Exported PDF");
   };
 
   // AI Chat
@@ -1185,6 +1601,38 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         <TitlePageEditor titlePage={titlePage} onChange={setTitlePage} onClose={() => setShowTitlePageEditor(false)} />
       )}
 
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={[
+            {
+              label: "Rename Character",
+              action: () => {
+                const el = elements.find((e) => e.id === contextMenu.elId);
+                if (el) setRenameModal({ oldName: stripHtml(el.text).trim(), newName: "" });
+              },
+            },
+            {
+              label: "Dual Dialogue",
+              checked: contextMenu.isDual,
+              action: () => toggleDual(contextMenu.elId),
+            },
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Rename Character Modal */}
+      {renameModal && (
+        <RenameCharacterModal
+          oldName={renameModal.oldName}
+          onRename={(oldName, newName) => { renameCharacter(oldName, newName); setRenameModal(null); }}
+          onClose={() => setRenameModal(null)}
+        />
+      )}
+
       {/* Notification */}
       {notification && (
         <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
@@ -1256,6 +1704,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               onImport={handleImport}
               onExportPDF={handleExportPDF}
               onExportFountain={handleExportFountain}
+              onExportFDX={handleExportFDX}
             />
           </div>
           <button
@@ -1468,47 +1917,96 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   clipPath: "url(#page-clip)",
                 }}
               >
-                {elements.map((el) => (
-                  <div key={el.id} id={`script-el-${el.id}`} style={{ position: "relative" }}>
-                    <ScriptElement
-                      element={el}
-                      isActive={el.id === activeElId}
-                      onClick={setActiveElId}
-                      onChange={updateElement}
-                      onKeyDown={handleKeyDown}
-                      sceneNumber={sceneNumberMap[el.id]}
-                    />
-                    {/* SmartType autocomplete dropdown */}
-                    {el.id === activeElId && suggestions.length > 0 && (
-                      <div style={{
-                        position: "absolute", left: 0, top: "100%", zIndex: 20,
-                        background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
-                        boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
-                        overflow: "hidden", marginTop: 2,
-                      }}>
-                        {suggestions.map((s, i) => (
-                          <div
-                            key={i}
-                            onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(s); }}
-                            onMouseEnter={() => setAcIndex(i)}
-                            style={{
-                              padding: "6px 12px", fontSize: 12, cursor: "pointer",
-                              fontFamily: "'Courier Prime', 'Courier New', monospace",
-                              background: i === acIndex ? "rgba(196,62,62,0.25)" : "transparent",
-                              color: i === acIndex ? "#e8e8e8" : "#aaa",
-                              borderLeft: i === acIndex ? "2px solid #c43e3e" : "2px solid transparent",
-                            }}
-                          >
-                            {s}
+                {(() => {
+                  const rendered = [];
+                  const isDialogueGroupEl = (t) => t === "character" || t === "dialogue" || t === "parenthetical";
+
+                  // Collect a dialogue group starting at index i (character + its dialogue/parenthetical children)
+                  const collectGroup = (startIdx) => {
+                    const group = [startIdx];
+                    for (let j = startIdx + 1; j < elements.length; j++) {
+                      if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
+                      else break;
+                    }
+                    return group;
+                  };
+
+                  const renderEl = (el, isDualColumn = false) => (
+                    <div
+                      key={el.id}
+                      id={`script-el-${el.id}`}
+                      style={{ position: "relative" }}
+                    >
+                      <ScriptElement
+                        element={el}
+                        isActive={el.id === activeElId}
+                        onClick={setActiveElId}
+                        onChange={updateElement}
+                        onKeyDown={handleKeyDown}
+                        sceneNumber={sceneNumberMap[el.id]}
+                        isDualColumn={isDualColumn}
+                      />
+                      {el.id === activeElId && suggestions.length > 0 && (
+                        <div style={{
+                          position: "absolute", left: 0, top: "100%", zIndex: 20,
+                          background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
+                          overflow: "hidden", marginTop: 2,
+                        }}>
+                          {suggestions.map((s, si) => (
+                            <div
+                              key={si}
+                              onMouseDown={(ev) => { ev.preventDefault(); acceptSuggestion(s); }}
+                              onMouseEnter={() => setAcIndex(si)}
+                              style={{
+                                padding: "6px 12px", fontSize: 12, cursor: "pointer",
+                                fontFamily: "'Courier Prime', 'Courier New', monospace",
+                                background: si === acIndex ? "rgba(196,62,62,0.25)" : "transparent",
+                                color: si === acIndex ? "#e8e8e8" : "#aaa",
+                                borderLeft: si === acIndex ? "2px solid #c43e3e" : "2px solid transparent",
+                              }}
+                            >
+                              {s}
+                            </div>
+                          ))}
+                          <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #222" }}>
+                            ↑↓ navigate · Tab/Enter accept · Esc dismiss
                           </div>
-                        ))}
-                        <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #222" }}>
-                          ↑↓ navigate · Tab/Enter accept · Esc dismiss
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+
+                  let i = 0;
+                  while (i < elements.length) {
+                    const el = elements[i];
+                    // Check if this character starts a dual dialogue pair:
+                    // This character is NOT dual, but the next character block IS dual
+                    if (el.type === "character" && !el.dual) {
+                      const leftGroup = collectGroup(i);
+                      const nextIdx = leftGroup[leftGroup.length - 1] + 1;
+                      if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
+                        const rightGroup = collectGroup(nextIdx);
+                        // Render side-by-side
+                        rendered.push(
+                          <div key={`dual-${el.id}`} style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {leftGroup.map((idx) => renderEl(elements[idx], true))}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {rightGroup.map((idx) => renderEl(elements[idx], true))}
+                            </div>
+                          </div>
+                        );
+                        i = rightGroup[rightGroup.length - 1] + 1;
+                        continue;
+                      }
+                    }
+                    rendered.push(renderEl(el));
+                    i++;
+                  }
+                  return rendered;
+                })()}
               </div>
               {/* Page headers & footers — overlaid on top of content */}
               {Array.from({ length: numPages }, (_, i) => (
