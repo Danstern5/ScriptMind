@@ -157,26 +157,6 @@ export default function ScriptMind() {
     return () => clearTimeout(timeout);
   }, [elements, scriptTitle, titlePage]);
 
-  // Measure content and calculate number of pages
-  useEffect(() => {
-    if (contentRef.current) {
-      // Sum actual child element heights instead of scrollHeight,
-      // which is inflated by minHeight, page gaps, and dead-zone padding
-      let totalH = 0;
-      const children = contentRef.current.children;
-      for (let i = 0; i < children.length; i++) {
-        const child = children[i];
-        // Use raw offsetHeight; ignore dead-zone paddingTop adjustments
-        const pad = parseFloat(child.style.paddingTop) || 0;
-        totalH += child.offsetHeight - pad;
-      }
-      // Add container padding (top + bottom: 72px + 72px = 144px)
-      totalH += 144;
-      const usablePageHeight = PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT;
-      setNumPages(Math.max(1, Math.ceil(totalH / usablePageHeight)));
-    }
-  }, [elements]);
-
   // Calculate which visual page the active element is on
   useEffect(() => {
     if (!activeElId || !contentRef.current) return;
@@ -187,36 +167,54 @@ export default function ScriptMind() {
     setCurrentPage(Math.min(page, numPages));
   }, [activeElId, numPages]);
 
-  // Push elements out of dead zones (footer/gap/header) at page boundaries
+  // Scroll active element into view when it's off-screen
   useEffect(() => {
-    if (!contentRef.current || numPages <= 1) return;
+    if (!activeElId || !editorScrollRef.current) return;
+    const dom = document.getElementById(`script-el-${activeElId}`);
+    if (!dom) return;
+    const rect = dom.getBoundingClientRect();
+    const container = editorScrollRef.current.getBoundingClientRect();
+    if (rect.bottom > container.bottom || rect.top < container.top) {
+      dom.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [activeElId]);
+
+  // Push elements out of dead zones and calculate page count
+  useEffect(() => {
+    if (!contentRef.current) return;
+    // Check if content needs more than one page
+    const measurePages = () => {
+      const totalH = contentRef.current.scrollHeight;
+      return Math.max(1, Math.ceil(totalH / (PAGE_HEIGHT + PAGE_GAP)));
+    };
+    if (numPages <= 1) {
+      const needed = measurePages();
+      if (needed !== numPages) setNumPages(needed);
+      return;
+    }
     // Clear previous adjustments
     elements.forEach(el => {
       const dom = document.getElementById(`script-el-${el.id}`);
       if (dom) dom.style.paddingTop = "";
     });
-    for (let p = 0; p < numPages - 1; p++) {
-      // Page p body ends here (content clipped after this)
-      const bodyEnd = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP - FOOTER_HEIGHT;
-      // Page p+1 body starts here (content visible again)
-      const nextBodyStart = (p + 1) * (PAGE_HEIGHT + PAGE_GAP) + HEADER_HEIGHT;
-      for (const el of elements) {
-        const dom = document.getElementById(`script-el-${el.id}`);
-        if (!dom) continue;
-        const top = dom.offsetTop;
-        const bottom = top + dom.offsetHeight;
-        if (top >= bodyEnd && top < nextBodyStart) {
-          // Element starts in dead zone — push down
-          dom.style.paddingTop = `${nextBodyStart - top}px`;
-          break;
-        }
-        if (top < bodyEnd && bottom > bodyEnd) {
-          // Element crosses into dead zone — push whole element to next page
+    // Iterate elements in document order; inner loop finds which boundary (if any) is crossed
+    for (const el of elements) {
+      const dom = document.getElementById(`script-el-${el.id}`);
+      if (!dom) continue;
+      const top = dom.offsetTop;
+      const bottom = top + dom.offsetHeight;
+      for (let p = 0; p < numPages - 1; p++) {
+        const bodyEnd = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP - FOOTER_HEIGHT;
+        const nextBodyStart = (p + 1) * (PAGE_HEIGHT + PAGE_GAP) + HEADER_HEIGHT;
+        if ((top >= bodyEnd && top < nextBodyStart) || (top < bodyEnd && bottom > bodyEnd)) {
           dom.style.paddingTop = `${nextBodyStart - top}px`;
           break;
         }
       }
     }
+    // After dead-zone padding, recheck if content now needs more (or fewer) pages
+    const needed = measurePages();
+    if (needed !== numPages) setNumPages(needed);
   }, [elements, numPages]);
 
   // Compute (MORE)/(CONT'D) markers: detect dialogue crossing page boundaries

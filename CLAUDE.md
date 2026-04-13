@@ -53,6 +53,13 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 - Dark theme, Courier Prime for screenplay text, IBM Plex Sans for UI
 - Desktop-only layout (sidebar 220px, editor 680px, AI panel 360px)
 
+## Page Layout System
+- Visual pagination using SVG clipPath to clip content into page-sized regions
+- Constants: `PAGE_HEIGHT=880`, `PAGE_GAP=32`, `HEADER_HEIGHT=44`, `FOOTER_HEIGHT=32`
+- Single useEffect owns both dead-zone push (elements crossing page boundaries get paddingTop) and numPages calculation (measured after padding via scrollHeight)
+- Auto-scrolls active element into view when off-screen
+- `getPageCount()` in utils/screenplay.js is a word-based estimate (250 words/page) for display only — not used for visual layout
+
 ## Import/Export
 - Import accepts `.fountain`, `.fdx`, `.txt` — parsers return fallback (`DEFAULT_SCRIPT.elements`) on failure
 - Export: PDF (jsPDF), `.fountain`, `.fdx` (Final Draft XML)
