@@ -18,9 +18,17 @@ npm run lint     # eslint
 ## File Structure
 ```
 src/
-  ScriptMind.jsx    # Main app component (~1900 lines)
+  ScriptMind.jsx    # Main app component — constants + ScriptMind component (~1450 lines)
   App.jsx           # Root wrapper
   main.jsx          # Entry point
+  components/
+    Icons.jsx              # SendIcon, PlusIcon, FileIcon, DownloadIcon, SparkleIcon, ChevronIcon
+    ContextMenu.jsx        # Right-click context menu
+    ScriptElement.jsx      # ContentEditable screenplay element (handles formatting, margins, scene numbers)
+    AIMessage.jsx          # Chat message bubble (AI or user)
+    TitlePageEditor.jsx    # Modal for editing title page fields
+    RenameCharacterModal.jsx # Modal for renaming characters
+    FileMenu.jsx           # File dropdown (new, import, export, title page)
   utils/
     ids.js          # uid(), msgId() — unique ID generators
     html.js         # stripHtml, escapeXml, htmlToFdxTextNodes, htmlToFountain
@@ -33,10 +41,6 @@ src/
 
 ## ScriptMind.jsx Structure
 Top-level constants: `ELEMENT_TYPES`, `DEFAULT_SCRIPT`, `DEFAULT_TITLE_PAGE`, `INITIAL_MESSAGES`, page layout constants (`PAGE_HEIGHT`, `PAGE_GAP`, `HEADER_HEIGHT`, `FOOTER_HEIGHT`).
-
-Inline components (not yet extracted):
-- Icon SVGs: `SendIcon`, `PlusIcon`, `FileIcon`, `DownloadIcon`, `SparkleIcon`, `ChevronIcon`
-- UI: `ContextMenu`, `ScriptElement`, `AIMessage`, `TitlePageEditor`, `RenameCharacterModal`, `FileMenu`
 
 Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all event handlers.
 
