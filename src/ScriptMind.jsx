@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { exportPDF } from "./utils/pdfExport";
-import { uid, msgId } from "./utils/ids";
-import { stripHtml, escapeXml } from "./utils/html";
+import { uid } from "./utils/ids";
+import { stripHtml } from "./utils/html";
 import { getScenes, getWordCount, getPageCount, getSmartSuggestions, getCurrentSceneIndex } from "./utils/screenplay";
 import { getNextType, cycleType, autoFormatText, TAB_CYCLE } from "./utils/elementTypes";
 import { elementsToFDX, elementsToFountain } from "./utils/export";
 import { parseFountain, parseFDX } from "./utils/import";
 import { SendIcon, PlusIcon, FileIcon, DownloadIcon, SparkleIcon, ChevronIcon } from "./components/Icons";
+import useAIChat from "./hooks/useAIChat";
 import ContextMenu from "./components/ContextMenu";
 import ScriptElement from "./components/ScriptElement";
 import AIMessage from "./components/AIMessage";
@@ -34,7 +35,6 @@ const DEFAULT_TITLE_PAGE = {
   contact: "",
 };
 
-const INITIAL_MESSAGES = [];
 // Page dimensions for visual page breaks
 const PAGE_HEIGHT = 880;
 const PAGE_GAP = 32;
@@ -55,9 +55,6 @@ export default function ScriptMind() {
       return els[0]?.id || "el-1";
     } catch { return "el-1"; }
   });
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
-  const [chatInput, setChatInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [lastSaved, setLastSaved] = useState("just now");
   const [scriptTitle, setScriptTitle] = useState(() => {
@@ -77,7 +74,6 @@ export default function ScriptMind() {
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
-  const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const editorScrollRef = useRef(null);
 
@@ -94,6 +90,17 @@ export default function ScriptMind() {
     return map;
   }, [elements]);
   const suggestions = useMemo(() => getSmartSuggestions(elements, activeElement), [elements, activeElement]);
+
+  const {
+    messages, setMessages,
+    chatInput, setChatInput,
+    isStreaming,
+    chatEndRef,
+    sendMessage,
+    handleRewriteScene,
+    handleSuggestNext,
+  } = useAIChat(elements, currentScene, activeElId);
+
   const contentRef = useRef(null);
   const [numPages, setNumPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -204,11 +211,6 @@ export default function ScriptMind() {
     }
     setPageBreakMarkers(markers);
   }, [elements, numPages]);
-
-  // Scroll chat to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Notifications
   const showNotification = (text) => {
@@ -491,85 +493,6 @@ export default function ScriptMind() {
     showNotification("Exported PDF");
   };
 
-  // AI Chat
-  const sendMessage = async (text) => {
-    if (!text.trim() || isStreaming) return;
-
-    const userMsg = { id: msgId(), role: "user", text: text.trim() };
-    setMessages((prev) => [...prev, userMsg]);
-    setChatInput("");
-    setIsStreaming(true);
-
-    // Build script context
-    const scriptText = elements.map((el) => {
-      const prefix = el.type === "scene-heading" ? "\n" : el.type === "character" ? "\n" : "";
-      return prefix + stripHtml(el.text);
-    }).join("\n");
-
-    const currentSceneText = `Scene ${currentScene}`;
-
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are ScriptMind, an expert AI screenwriting collaborator. You have access to the writer's full screenplay and are helping them craft their story. Be specific to THEIR script — reference their characters, scenes, and dialogue by name. Be concise, insightful, and practical. Use a warm but professional tone. Format with bullet points (•) sparingly. Use *asterisks* for emphasis on key terms.
-
-CURRENT SCREENPLAY:
-${scriptText}
-
-CURRENT POSITION: ${currentSceneText}
-
-Respond concisely (2-4 short paragraphs max). Be specific to this screenplay — mention character names, scene details, etc.`,
-          messages: [
-            ...messages.filter(m => m.role).map(m => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.text
-            })),
-            { role: "user", content: text.trim() }
-          ],
-        }),
-      });
-
-      const data = await response.json();
-      const aiText = data.content?.map(b => b.text || "").join("") || "I'd be happy to help with your screenplay. Could you tell me more about what you're working on?";
-
-      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", text: aiText }]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: msgId(),
-          role: "assistant",
-          text: "I'm having trouble connecting right now. In the meantime, I can see you're working on a compelling scene between Morgan and Cole. The tension in their dialogue is strong — Morgan's short responses are doing a lot of heavy lifting. What specifically would you like help with?",
-        },
-      ]);
-    }
-    setIsStreaming(false);
-  };
-
-  const handleRewriteScene = () => {
-    const sceneEls = [];
-    let inCurrentScene = false;
-    for (const el of elements) {
-      if (el.type === "scene-heading") {
-        if (inCurrentScene) break;
-        if (el.id === activeElId || getCurrentSceneIndex(elements, el.id) === currentScene) {
-          inCurrentScene = true;
-        }
-      }
-      if (inCurrentScene) sceneEls.push(el);
-    }
-    const sceneText = sceneEls.map((e) => stripHtml(e.text)).join("\n");
-    sendMessage(`Please rewrite the current scene (Scene ${currentScene}) to be tighter and more impactful. Here's what I have:\n\n${sceneText}`);
-  };
-
-  const handleSuggestNext = () => {
-    sendMessage("Based on where my cursor is in the script, suggest what should come next. What's the next line or beat that would work well here?");
-  };
-
   // Click outside to close file menu
   useEffect(() => {
     const handler = (e) => {
@@ -582,7 +505,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
   return (
     <div
       className="flex flex-col h-screen w-full overflow-hidden"
-      style={{ background: "#080808", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
+      style={{ background: "#0f172a", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -598,12 +521,12 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
         @keyframes rotateSpark { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } 50% { box-shadow: 0 0 8px #c43e3e, 0 0 16px rgba(196,62,62,0.6); } 100% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } }
+        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #64748b, 0 0 8px rgba(100,116,139,0.4); } 50% { box-shadow: 0 0 8px #64748b, 0 0 16px rgba(100,116,139,0.6); } 100% { box-shadow: 0 0 4px #64748b, 0 0 8px rgba(100,116,139,0.4); } }
         [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #222222; border-radius: 3px; }
-        ::selection { background: rgba(196,62,62,0.25); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::selection { background: rgba(100,116,139,0.25); }
       `}</style>
 
       {/* Title Page Editor Modal */}
@@ -645,8 +568,8 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
 
       {/* Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-          <span style={{ color: "#c43e3e", marginRight: 6 }}>✓</span> {notification}
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+          <span style={{ color: "#64748b", marginRight: 6 }}>✓</span> {notification}
         </div>
       )}
 
@@ -654,8 +577,8 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       {isDragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
           <div className="flex flex-col items-center gap-4" style={{ animation: "fadeUp 0.2s ease" }}>
-            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #c43e3e", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#c43e3e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #64748b", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
@@ -681,18 +604,14 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       />
 
       {/* ── TOP BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderBottom: "1px solid #222222", padding: "0 16px", gap: 16 }}>
+      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "linear-gradient(90deg, #0f172a, #162032, #0f172a)", borderBottom: "1px solid #334155", padding: "0 16px", gap: 16 }}>
         <div style={{
           fontFamily: "'Playfair Display', serif", fontSize: 17, letterSpacing: "0.02em",
-          backgroundImage: "linear-gradient(90deg, #ffffff, #c43e3e, #ffffff, #c43e3e)",
-          backgroundSize: "200% auto",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-          animation: "shimmer 4s linear infinite",
+          color: "#e8e8e8",
         }}>
           Script<span style={{ fontStyle: "italic" }}>Mind</span>
         </div>
-        <div style={{ width: 1, height: 20, background: "#222222" }} />
+        <div style={{ width: 1, height: 20, background: "#334155" }} />
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#888888" }}>
           {scriptTitle}.fdx
         </div>
@@ -702,7 +621,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
             <button
               onClick={() => setFileMenuOpen(!fileMenuOpen)}
               className="flex items-center gap-1"
-              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
+              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
             >
               <FileIcon /> File <ChevronIcon />
             </button>
@@ -719,7 +638,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           </div>
           <button
             onClick={handleExportPDF}
-            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
           >
             <DownloadIcon /> Export PDF
           </button>
@@ -730,7 +649,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       <div className="flex flex-1 overflow-hidden">
 
         {/* LEFT SIDEBAR */}
-        <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderRight: "1px solid #222222" }}>
+        <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "linear-gradient(180deg, #0f172a, #162032, #0f172a)", borderRight: "1px solid #334155" }}>
           <div style={{ padding: "12px 14px 8px" }}>
             <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "#555555", marginBottom: 8 }}>
               Scenes
@@ -738,7 +657,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
             <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
               {scenes.map((scene, i) => {
                 const isActive = scene.id === activeElId || getCurrentSceneIndex(elements, activeElId) === i + 1;
-                const color = isActive ? "#c43e3e" : "#555555";
+                const color = isActive ? "#64748b" : "#555555";
                 return (
                   <div
                     key={scene.id}
@@ -746,18 +665,18 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                     className="flex items-center gap-2 cursor-pointer"
                     style={{
                       padding: "7px 10px", borderRadius: 4,
-                      background: isActive ? "rgba(196,62,62,0.15)" : "transparent",
+                      background: isActive ? "rgba(100,116,139,0.15)" : "transparent",
                       borderLeft: isActive ? `2px solid ${color}` : "2px solid transparent",
                       boxShadow: isActive ? `inset 3px 0 8px -4px ${color}` : "none",
                       transition: "all 0.2s",
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#111111"; }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#1e293b"; }}
                     onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
                   >
                     <span style={{
                       fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, minWidth: 18, height: 18,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      borderRadius: "50%", backgroundColor: isActive ? "rgba(196,62,62,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
+                      borderRadius: "50%", backgroundColor: isActive ? "rgba(100,116,139,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
                     }}>{i + 1}</span>
                     <span style={{ fontSize: 12, color: isActive ? "#e8e8e8" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {stripHtml(scene.text) || "UNTITLED SCENE"}
@@ -776,15 +695,15 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 insertElementAfter(lastId, "scene-heading", "");
               }}
               className="flex items-center gap-1.5 w-full"
-              style={{ fontSize: 11, color: "#555555", background: "transparent", border: "1px dashed #222222", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
+              style={{ fontSize: 11, color: "#555555", background: "transparent", border: "1px dashed #334155", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
               onMouseEnter={(e) => { e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#888888"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#555555"; e.currentTarget.style.borderColor = "#222222"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "#555555"; e.currentTarget.style.borderColor = "#334155"; }}
             >
               <PlusIcon /> Add Scene
             </button>
           </div>
 
-          <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #222222" }}>
+          <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #334155" }}>
             {[
               ["Pages", `${numPages} / 110`],
               ["Words", wordCount.toLocaleString()],
@@ -800,9 +719,9 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         </div>
 
         {/* ── SCREENPLAY EDITOR ── */}
-        <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#0d0d0d" }}>
+        <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#131c2e" }}>
           {/* Toolbar */}
-          <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#0a0a0a", borderBottom: "1px solid #222222", padding: "0 16px", gap: 4 }}>
+          <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#0f172a", borderBottom: "1px solid #334155", padding: "0 16px", gap: 4 }}>
             {ELEMENT_TYPES.map((type) => {
               const activeEl = elements.find((e) => e.id === activeElId);
               const isActive = activeEl?.type === type;
@@ -826,7 +745,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               );
             })}
             {/* Formatting separator + B/I/U buttons */}
-            <div style={{ width: 1, height: 18, background: "#222222", margin: "0 4px" }} />
+            <div style={{ width: 1, height: 18, background: "#334155", margin: "0 4px" }} />
             {[
               { label: "B", cmd: "bold", style: { fontWeight: 700 } },
               { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
@@ -855,20 +774,20 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           </div>
 
           {/* Editor — continuous flow with page gaps */}
-          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)" }}>
+          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #0c1017 0%, #131c2e 60%)" }}>
             {/* Visual Title Page */}
             <div
               onClick={() => setShowTitlePageEditor(true)}
               style={{
                 width: 680, height: PAGE_HEIGHT, marginBottom: PAGE_GAP, borderRadius: 2, cursor: "pointer",
                 background: "#ffffff", position: "relative", flexShrink: 0,
-                boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)",
+                boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15)",
                 display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
                 fontFamily: "'Courier Prime', 'Courier New', monospace", color: "#111",
                 transition: "box-shadow 0.2s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.3)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.3)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15)"; }}
             >
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "24pt", fontWeight: "bold", marginBottom: 8 }}>{titlePage.title || "Untitled"}</div>
@@ -909,7 +828,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   left: 0, width: 680, height: PAGE_HEIGHT,
                   borderRadius: 2,
                   background: "#ffffff",
-                  boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15), 0 0 120px rgba(196,62,62,0.05)",
+                  boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15), 0 0 120px rgba(100,116,139,0.05)",
                   pointerEvents: "none",
                 }} />
               ))}
@@ -921,7 +840,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   background: "#ffffff",
                   borderRadius: 2,
                   padding: "72px 72px 72px 108px",
-                  color: "#111111",
+                  color: "#1e293b",
                   position: "relative",
                   clipPath: "url(#page-clip)",
                 }}
@@ -958,7 +877,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       {el.id === activeElId && suggestions.length > 0 && (
                         <div style={{
                           position: "absolute", left: 0, top: "100%", zIndex: 20,
-                          background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                          background: "#1e293b", border: "1px solid #475569", borderRadius: 4,
                           boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
                           overflow: "hidden", marginTop: 2,
                         }}>
@@ -970,15 +889,15 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                               style={{
                                 padding: "6px 12px", fontSize: 12, cursor: "pointer",
                                 fontFamily: "'Courier Prime', 'Courier New', monospace",
-                                background: si === acIndex ? "rgba(196,62,62,0.25)" : "transparent",
+                                background: si === acIndex ? "rgba(100,116,139,0.25)" : "transparent",
                                 color: si === acIndex ? "#e8e8e8" : "#aaa",
-                                borderLeft: si === acIndex ? "2px solid #c43e3e" : "2px solid transparent",
+                                borderLeft: si === acIndex ? "2px solid #64748b" : "2px solid transparent",
                               }}
                             >
                               {s}
                             </div>
                           ))}
-                          <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #222" }}>
+                          <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #334155" }}>
                             ↑↓ navigate · Tab/Enter accept · Esc dismiss
                           </div>
                         </div>
@@ -1066,17 +985,13 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         </div>
 
         {/* ── AI PANEL ── */}
-        <div className="flex flex-col flex-shrink-0" style={{ width: 360, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderLeft: "1px solid #222222" }}>
+        <div className="flex flex-col flex-shrink-0" style={{ width: 360, background: "linear-gradient(180deg, #0f172a, #162032, #0f172a)", borderLeft: "1px solid #334155" }}>
           {/* Header */}
-          <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid #222222", padding: "0 16px", gap: 10 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #d45555, #c43e3e)", animation: "ringPulse 2s ease-in-out infinite" }} />
+          <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid #334155", padding: "0 16px", gap: 10 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #94a3b8, #64748b)", animation: "ringPulse 2s ease-in-out infinite" }} />
             <div style={{
               fontSize: 13, fontWeight: 500,
-              backgroundImage: "linear-gradient(90deg, #e8e8e8, #c43e3e, #e8e8e8, #c43e3e)",
-              backgroundSize: "200% auto",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              animation: "shimmer 6s linear infinite",
+              color: "#e8e8e8",
             }}>AI Collaborator</div>
             <div className="ml-auto" style={{ fontSize: 11, padding: "3px 10px", borderRadius: 3, background: "rgba(255,255,255,0.1)", color: "#e8e8e8" }}>
               Chat
@@ -1086,8 +1001,8 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           {/* Messages */}
           <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
             {/* Context card */}
-            <div style={{ background: "rgba(196,62,62,0.08)", border: "1px solid rgba(196,62,62,0.2)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#888888", lineHeight: 1.5 }}>
-              <strong style={{ color: "#c43e3e", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+            <div style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.2)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#888888", lineHeight: 1.5 }}>
+              <strong style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
                 📍 Current Scene Context
               </strong>
               Scene {currentScene} · {stripHtml(scenes[currentScene - 1]?.text || "Start writing")} · {
@@ -1112,10 +1027,10 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
 
             {isStreaming && (
               <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
-                <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(196,62,62,0.2)", color: "#c43e3e", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
+                <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(100,116,139,0.2)", color: "#64748b", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
                 <div className="flex-1">
                   <div style={{ fontSize: 10, color: "#555555", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>ScriptMind</div>
-                  <div style={{ fontSize: 12.5, background: "#111111", border: "1px solid #222222", borderRadius: 6, padding: "10px 12px", color: "#c43e3e" }}>
+                  <div style={{ fontSize: 12.5, background: "#1e293b", border: "1px solid #334155", borderRadius: 6, padding: "10px 12px", color: "#64748b" }}>
                     <span style={{ animation: "pulse 1s ease-in-out infinite" }}>●</span>
                     <span style={{ animation: "pulse 1s ease-in-out infinite 0.2s" }}> ●</span>
                     <span style={{ animation: "pulse 1s ease-in-out infinite 0.4s" }}> ●</span>
@@ -1128,15 +1043,15 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           </div>
 
           {/* Input Area */}
-          <div style={{ padding: 12, borderTop: "1px solid #222222" }}>
+          <div style={{ padding: 12, borderTop: "1px solid #334155" }}>
             <div className="flex gap-1.5" style={{ marginBottom: 8 }}>
               <button
                 onClick={handleRewriteScene}
                 disabled={isStreaming}
                 className="flex items-center gap-1"
-                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
+                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(100,116,139,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(100,116,139,0.4)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#334155"; }}
               >
                 <SparkleIcon /> Rewrite scene
               </button>
@@ -1144,9 +1059,9 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 onClick={handleSuggestNext}
                 disabled={isStreaming}
                 className="flex items-center gap-1"
-                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
+                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(100,116,139,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(100,116,139,0.4)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#334155"; }}
               >
                 <SparkleIcon /> Suggest next line
               </button>
@@ -1159,27 +1074,27 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 placeholder="Ask anything about your script…"
                 rows={2}
                 style={{
-                  flex: 1, background: "#111111", border: "1px solid #222222",
+                  flex: 1, background: "#1e293b", border: "1px solid #334155",
                   borderRadius: 6, padding: "9px 12px", fontSize: 12.5,
                   color: "#e8e8e8", fontFamily: "inherit", resize: "none",
                   outline: "none", lineHeight: 1.5,
                 }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222222"; }}
+                onFocus={(e) => { e.target.style.borderColor = "#64748b"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#334155"; }}
               />
               <button
                 onClick={() => sendMessage(chatInput)}
                 disabled={isStreaming || !chatInput.trim()}
                 style={{
                   width: 34, height: 34, borderRadius: 6,
-                  backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #c43e3e, #d45555, #c43e3e)" : "none",
-                  backgroundColor: chatInput.trim() ? "transparent" : "#222222",
+                  backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #64748b, #94a3b8, #64748b)" : "none",
+                  backgroundColor: chatInput.trim() ? "transparent" : "#334155",
                   backgroundSize: "200% 200%",
                   animation: chatInput.trim() ? "gradientShift 3s ease infinite" : "none",
                   border: "none", cursor: chatInput.trim() ? "pointer" : "default",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   color: "white", flexShrink: 0, transition: "all 0.15s",
-                  boxShadow: chatInput.trim() ? "0 2px 12px rgba(196,62,62,0.4)" : "none",
+                  boxShadow: chatInput.trim() ? "0 2px 12px rgba(100,116,139,0.4)" : "none",
                 }}
               >
                 <SendIcon />
@@ -1190,8 +1105,8 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       </div>
 
       {/* ── STATUS BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderTop: "1px solid #222222", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#555555", fontFamily: "'IBM Plex Mono', monospace" }}>
-        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#c43e3e" }} />
+      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "linear-gradient(90deg, #0f172a, #162032, #0f172a)", borderTop: "1px solid #334155", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#555555", fontFamily: "'IBM Plex Mono', monospace" }}>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#64748b" }} />
         <span>Auto-saved</span>
         <span>·</span>
         <span>Screenplay format</span>
