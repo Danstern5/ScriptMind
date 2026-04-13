@@ -1,9 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { jsPDF } from "jspdf";
+import { uid, msgId } from "./utils/ids";
+import { stripHtml, escapeXml } from "./utils/html";
+import { getScenes, getWordCount, getPageCount, getSmartSuggestions, getCurrentSceneIndex } from "./utils/screenplay";
+import { getNextType, cycleType, autoFormatText, TAB_CYCLE } from "./utils/elementTypes";
+import { elementsToFDX, elementsToFountain } from "./utils/export";
+import { parseFountain, parseFDX } from "./utils/import";
 
 // ─── Constants ───
 const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition", "shot", "centered"];
-const TAB_CYCLE = ["action", "character", "dialogue", "action"];
 
 const DEFAULT_SCRIPT = {
   title: "Untitled Screenplay",
@@ -68,343 +73,11 @@ const INITIAL_MESSAGES = [
     text: "I've read your screenplay. The tension between Morgan and Cole is compelling — her silence carries real weight. A few thoughts:\n\n• The phone buzzing in Scene 3 would be a natural beat — want me to write it in?\n• Cole feels reactive. You might give him one line that shows what *he's* afraid of, not just what he wants from Morgan.\n• The transition from Scene 2 to Scene 3 is strong. The rain to the sparse apartment is a nice tonal shift.",
   },
 ];
-
-// ─── Utility Functions ───
-const uid = () => "el-" + Math.random().toString(36).slice(2, 9);
-const msgId = () => "m-" + Math.random().toString(36).slice(2, 9);
-
-function stripHtml(html) {
-  return html.replace(/<[^>]*>/g, "");
-}
-
-function escapeXml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function htmlToFdxTextNodes(html) {
-  const plain = html.replace(/<br\s*\/?>/gi, "\n");
-  const parts = [];
-  const tagRe = /<(b|strong|i|em|u)>(.*?)<\/\1>/gi;
-  let last = 0;
-  let m;
-  while ((m = tagRe.exec(plain)) !== null) {
-    if (m.index > last) {
-      const text = plain.slice(last, m.index).replace(/<[^>]*>/g, "");
-      if (text) parts.push({ style: "", text });
-    }
-    const tag = m[1].toLowerCase();
-    const style = (tag === "b" || tag === "strong") ? "Bold" : tag === "i" || tag === "em" ? "Italic" : "Underline";
-    parts.push({ style, text: m[2].replace(/<[^>]*>/g, "") });
-    last = m.index + m[0].length;
-  }
-  if (last < plain.length) {
-    const text = plain.slice(last).replace(/<[^>]*>/g, "");
-    if (text) parts.push({ style: "", text });
-  }
-  if (parts.length === 0) parts.push({ style: "", text: plain.replace(/<[^>]*>/g, "") });
-  return parts.map(p =>
-    p.style
-      ? `<Text Style="${p.style}">${escapeXml(p.text)}</Text>`
-      : `<Text>${escapeXml(p.text)}</Text>`
-  ).join("");
-}
-
-const FDX_TYPE_MAP = {
-  "scene-heading": "Scene Heading",
-  "action": "Action",
-  "character": "Character",
-  "dialogue": "Dialogue",
-  "parenthetical": "Parenthetical",
-  "transition": "Transition",
-  "shot": "Shot",
-  "centered": "Action",
-};
-
-function elementsToFDX(elements, title = "Untitled", tp = null) {
-  const t = tp || { title, credit: "written by", author: "Writer", source: "", draftDate: "", contact: "" };
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  xml += `<FinalDraft DocumentType="Script" Template="No" Version="5">\n`;
-  xml += `  <Content>\n`;
-  const collectFdxGroup = (startIdx) => {
-    const group = [startIdx];
-    for (let j = startIdx + 1; j < elements.length; j++) {
-      if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
-      else break;
-    }
-    return group;
-  };
-  const writeParagraph = (el, dualPos) => {
-    const fdxType = FDX_TYPE_MAP[el.type] || "Action";
-    const alignment = el.type === "centered" ? ` Alignment="Center"` : "";
-    const pos = dualPos ? ` Position="${dualPos}"` : "";
-    xml += `    <Paragraph Type="${fdxType}"${alignment}${pos}>\n`;
-    xml += `      ${htmlToFdxTextNodes(el.text)}\n`;
-    xml += `    </Paragraph>\n`;
-  };
-  let fi = 0;
-  while (fi < elements.length) {
-    const el = elements[fi];
-    if (el.type === "character" && !el.dual) {
-      const leftGroup = collectFdxGroup(fi);
-      const nextIdx = leftGroup[leftGroup.length - 1] + 1;
-      if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
-        const rightGroup = collectFdxGroup(nextIdx);
-        for (const idx of leftGroup) writeParagraph(elements[idx], "Left");
-        for (const idx of rightGroup) writeParagraph(elements[idx], "Right");
-        fi = rightGroup[rightGroup.length - 1] + 1;
-        continue;
-      }
-    }
-    writeParagraph(el, null);
-    fi++;
-  }
-  xml += `  </Content>\n`;
-  xml += `  <TitlePage>\n    <Content>\n`;
-  xml += `      <Paragraph Type="Title"><Text>${escapeXml(t.title || title)}</Text></Paragraph>\n`;
-  if (t.credit) xml += `      <Paragraph Type="Credit"><Text>${escapeXml(t.credit)}</Text></Paragraph>\n`;
-  if (t.author) xml += `      <Paragraph Type="Author"><Text>${escapeXml(t.author)}</Text></Paragraph>\n`;
-  if (t.source) xml += `      <Paragraph Type="Source"><Text>${escapeXml(t.source)}</Text></Paragraph>\n`;
-  if (t.draftDate) xml += `      <Paragraph Type="Draft Date"><Text>${escapeXml(t.draftDate)}</Text></Paragraph>\n`;
-  if (t.contact) xml += `      <Paragraph Type="Contact"><Text>${escapeXml(t.contact)}</Text></Paragraph>\n`;
-  xml += `    </Content>\n  </TitlePage>\n`;
-  xml += `</FinalDraft>\n`;
-  return xml;
-}
-
-function htmlToFountain(html) {
-  return html
-    .replace(/<b>(.*?)<\/b>/gi, "**$1**")
-    .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
-    .replace(/<i>(.*?)<\/i>/gi, "*$1*")
-    .replace(/<em>(.*?)<\/em>/gi, "*$1*")
-    .replace(/<u>(.*?)<\/u>/gi, "_$1_")
-    .replace(/<[^>]*>/g, "");
-}
-
-function getScenes(elements) {
-  const scenes = [];
-  elements.forEach((el, idx) => {
-    if (el.type === "scene-heading") {
-      scenes.push({ index: idx, text: el.text, id: el.id });
-    }
-  });
-  return scenes;
-}
-
-function getWordCount(elements) {
-  return elements.reduce((sum, el) => sum + stripHtml(el.text).split(/\s+/).filter(Boolean).length, 0);
-}
-
-function getPageCount(elements) {
-  // Rough: ~250 words per page for screenplay
-  return Math.max(1, Math.ceil(getWordCount(elements) / 250));
-}
-
-// ─── SmartType Autocomplete ───
-const COMMON_TRANSITIONS = ["CUT TO:", "FADE OUT.", "FADE IN:", "SMASH CUT TO:", "MATCH CUT TO:", "JUMP CUT TO:", "DISSOLVE TO:", "TIME CUT:", "FREEZE FRAME"];
-const SCENE_PREFIXES = ["INT. ", "EXT. ", "INT./EXT. ", "I/E. "];
-const TIMES_OF_DAY = [" — DAY", " — NIGHT", " — DAWN", " — DUSK", " — MORNING", " — AFTERNOON", " — EVENING", " — LATER", " — CONTINUOUS", " — MOMENTS LATER"];
-
-function getSmartSuggestions(elements, currentEl) {
-  if (!currentEl) return [];
-  const query = stripHtml(currentEl.text).toUpperCase();
-
-  if (currentEl.type === "character") {
-    const names = [...new Set(
-      elements.filter(e => e.type === "character").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
-    )];
-    if (!query) return names.slice(0, 8);
-    return names.filter(n => n.startsWith(query) && n !== query).slice(0, 6);
-  }
-
-  if (currentEl.type === "scene-heading") {
-    // If empty or just started, suggest prefixes
-    if (!query || query.length <= 3) {
-      const prefixMatches = SCENE_PREFIXES.filter(p => p.startsWith(query));
-      if (prefixMatches.length > 0) return prefixMatches;
-    }
-    // If we have a prefix, suggest known locations
-    const locations = [...new Set(
-      elements.filter(e => e.type === "scene-heading").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
-    )];
-    // Also suggest times of day if location is partially typed
-    const hasTime = TIMES_OF_DAY.some(t => query.includes(t.trim()));
-    if (!hasTime && query.length > 5) {
-      const timeMatches = TIMES_OF_DAY.map(t => query + t);
-      const locMatches = locations.filter(l => l.startsWith(query) && l !== query);
-      return [...locMatches, ...timeMatches].slice(0, 6);
-    }
-    return locations.filter(l => l.startsWith(query) && l !== query).slice(0, 6);
-  }
-
-  if (currentEl.type === "transition") {
-    if (!query) return COMMON_TRANSITIONS.slice(0, 6);
-    return COMMON_TRANSITIONS.filter(t => t.startsWith(query) && t !== query).slice(0, 6);
-  }
-
-  return [];
-}
-
 // Page dimensions for visual page breaks
 const PAGE_HEIGHT = 880;
 const PAGE_GAP = 32;
 const HEADER_HEIGHT = 44; // Reserved header margin (page number area)
 const FOOTER_HEIGHT = 32; // Reserved footer margin
-
-function getCurrentSceneIndex(elements, activeElId) {
-  let sceneIdx = 0;
-  for (let i = 0; i < elements.length; i++) {
-    if (elements[i].type === "scene-heading") sceneIdx++;
-    if (elements[i].id === activeElId) return sceneIdx;
-  }
-  return sceneIdx;
-}
-
-function getNextType(currentType) {
-  if (currentType === "character") return "dialogue";
-  if (currentType === "dialogue") return "action";
-  if (currentType === "parenthetical") return "dialogue";
-  if (currentType === "scene-heading") return "action";
-  if (currentType === "transition") return "action";
-  if (currentType === "shot") return "action";
-  if (currentType === "centered") return "action";
-  return "action";
-}
-
-function cycleType(currentType) {
-  const idx = TAB_CYCLE.indexOf(currentType);
-  if (idx === -1) return "action";
-  return TAB_CYCLE[(idx + 1) % TAB_CYCLE.length];
-}
-
-function autoFormatText(type, text) {
-  if (type === "scene-heading") {
-    let t = text.toUpperCase();
-    const plain = stripHtml(t);
-    if (plain && !plain.startsWith("INT.") && !plain.startsWith("EXT.") && !plain.startsWith("INT/EXT") && !plain.startsWith("I/E")) {
-      t = "INT. " + t;
-    }
-    return t;
-  }
-  if (type === "character") return text.toUpperCase();
-  if (type === "transition") return text.toUpperCase();
-  if (type === "shot") return text.toUpperCase();
-  return text;
-}
-
-function elementsToFountain(elements, title = "Untitled", tp = null) {
-  const t = tp || DEFAULT_TITLE_PAGE;
-  let fountain = `Title: ${t.title || title}\nCredit: ${t.credit || "written by"}\nAuthor: ${t.author || "Writer"}\n`;
-  if (t.source) fountain += `Source: ${t.source}\n`;
-  if (t.draftDate) fountain += `Draft date: ${t.draftDate}\n`;
-  if (t.contact) fountain += `Contact: ${t.contact}\n`;
-  fountain += "\n";
-  elements.forEach((el) => {
-    const text = htmlToFountain(el.text);
-    switch (el.type) {
-      case "scene-heading":
-        fountain += `\n${text}\n\n`;
-        break;
-      case "action":
-        fountain += `${text}\n\n`;
-        break;
-      case "character":
-        fountain += el.dual ? `${text} ^\n` : `${text}\n`;
-        break;
-      case "dialogue":
-        fountain += `${text}\n\n`;
-        break;
-      case "parenthetical":
-        fountain += `(${text.replace(/^\(|\)$/g, "")})\n`;
-        break;
-      case "transition":
-        fountain += `> ${text}\n\n`;
-        break;
-      case "shot":
-        fountain += `${text}\n\n`;
-        break;
-      case "centered":
-        fountain += `> ${text} <\n\n`;
-        break;
-      default:
-        fountain += `${text}\n\n`;
-    }
-  });
-  return fountain;
-}
-
-function parseFountain(text) {
-  const lines = text.split("\n");
-  const elements = [];
-  let i = 0;
-  // Skip title page
-  while (i < lines.length && lines[i].match(/^(Title|Credit|Author|Source|Draft date|Contact|Copyright):/i)) {
-    i++;
-    while (i < lines.length && lines[i].startsWith("  ")) i++;
-  }
-  while (i < lines.length && lines[i].trim() === "") i++;
-
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    if (!line) { i++; continue; }
-    // Centered text: > text <
-    if (line.match(/^>.*<$/)) {
-      elements.push({ id: uid(), type: "centered", text: line.replace(/^>\s*/, "").replace(/\s*<$/, "") });
-    } else if (line.match(/^(INT\.|EXT\.|INT\/EXT|I\/E)/i)) {
-      elements.push({ id: uid(), type: "scene-heading", text: line.toUpperCase() });
-    } else if (line.startsWith(">") && !line.startsWith(">>")) {
-      elements.push({ id: uid(), type: "transition", text: line.replace(/^>\s*/, "").toUpperCase() });
-    } else if (line.match(/^\(.*\)$/)) {
-      elements.push({ id: uid(), type: "parenthetical", text: line });
-    } else if (line === line.toUpperCase() && line.length > 1 && !line.match(/^(INT\.|EXT\.)/) && line.match(/^[A-Z]/)) {
-      elements.push({ id: uid(), type: "character", text: line });
-      // Next non-empty line is likely dialogue
-      i++;
-      while (i < lines.length) {
-        const dl = lines[i].trim();
-        if (!dl) break;
-        if (dl.match(/^\(.*\)$/)) {
-          elements.push({ id: uid(), type: "parenthetical", text: dl });
-        } else {
-          elements.push({ id: uid(), type: "dialogue", text: dl });
-        }
-        i++;
-      }
-      continue;
-    } else {
-      elements.push({ id: uid(), type: "action", text: line });
-    }
-    i++;
-  }
-  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
-}
-
-function parseFDX(xmlText) {
-  const elements = [];
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, "text/xml");
-  const paragraphs = doc.querySelectorAll("Paragraph");
-  paragraphs.forEach((p) => {
-    const pType = p.getAttribute("Type") || "";
-    const textNodes = p.querySelectorAll("Text");
-    const text = Array.from(textNodes).map((t) => t.textContent).join("");
-    if (!text.trim()) return;
-    const typeMap = {
-      "Scene Heading": "scene-heading",
-      "Action": "action",
-      "Character": "character",
-      "Dialogue": "dialogue",
-      "Parenthetical": "parenthetical",
-      "Transition": "transition",
-      "Shot": "shot",
-      "General": "centered",
-    };
-    elements.push({ id: uid(), type: typeMap[pType] || "action", text: text.trim() });
-  });
-  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
-}
-
-// ─── Icons ───
 function SendIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -915,8 +588,20 @@ export default function ScriptMind() {
   // Measure content and calculate number of pages
   useEffect(() => {
     if (contentRef.current) {
-      const h = contentRef.current.scrollHeight;
-      setNumPages(Math.max(1, Math.ceil(h / PAGE_HEIGHT)));
+      // Sum actual child element heights instead of scrollHeight,
+      // which is inflated by minHeight, page gaps, and dead-zone padding
+      let totalH = 0;
+      const children = contentRef.current.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        // Use raw offsetHeight; ignore dead-zone paddingTop adjustments
+        const pad = parseFloat(child.style.paddingTop) || 0;
+        totalH += child.offsetHeight - pad;
+      }
+      // Add container padding (top + bottom: 72px + 72px = 144px)
+      totalH += 144;
+      const usablePageHeight = PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT;
+      setNumPages(Math.max(1, Math.ceil(totalH / usablePageHeight)));
     }
   }, [elements]);
 
@@ -1206,9 +891,9 @@ export default function ScriptMind() {
     reader.onload = (ev) => {
       const text = ev.target.result;
       if (name.endsWith(".fdx")) {
-        setElements(parseFDX(text));
+        setElements(parseFDX(text, DEFAULT_SCRIPT.elements));
       } else {
-        setElements(parseFountain(text));
+        setElements(parseFountain(text, DEFAULT_SCRIPT.elements));
       }
       setScriptTitle(file.name.replace(/\.(fountain|fdx|txt)$/, ""));
       showNotification(`Imported ${file.name}`);
@@ -1875,7 +1560,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#aaa", opacity: 0.6 }}>Click to edit</div>
             </div>
 
-            <div style={{ position: "relative", width: 680, flexShrink: 0 }}>
+            <div style={{ position: "relative", width: 680, flexShrink: 0, minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP }}>
               {/* SVG clipPath — clips content to body area only (excludes header/footer margins) */}
               <svg width="0" height="0" style={{ position: "absolute" }}>
                 <defs>
@@ -1908,7 +1593,6 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 ref={contentRef}
                 style={{
                   width: 680,
-                  minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP,
                   background: "#ffffff",
                   borderRadius: 2,
                   padding: "72px 72px 72px 108px",
