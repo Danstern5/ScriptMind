@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { jsPDF } from "jspdf";
+import { exportPDF } from "./utils/pdfExport";
 import { uid, msgId } from "./utils/ids";
 import { stripHtml, escapeXml } from "./utils/html";
 import { getScenes, getWordCount, getPageCount, getSmartSuggestions, getCurrentSceneIndex } from "./utils/screenplay";
@@ -19,67 +19,22 @@ const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "pare
 
 const DEFAULT_SCRIPT = {
   title: "Untitled Screenplay",
-  author: "Writer",
+  author: "",
   elements: [
-    { id: "el-1", type: "scene-heading", text: "INT. DETECTIVE'S OFFICE — DAY" },
-    { id: "el-2", type: "action", text: "A cluttered desk drowns under case files. Coffee rings stain every surface. DETECTIVE COLE (50s, rumpled suit, reading glasses he refuses to wear in public) stares at a corkboard covered in photographs." },
-    { id: "el-3", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-4", type: "parenthetical", text: "(to himself)" },
-    { id: "el-5", type: "dialogue", text: "Something's not right." },
-    { id: "el-6", type: "action", text: "He pulls a photograph from the board. Studies it." },
-    { id: "el-7", type: "scene-heading", text: "EXT. RAINY STREET — NIGHT" },
-    { id: "el-8", type: "action", text: "Rain hammers the pavement. A lone figure moves through the downpour — MORGAN (40s, worn leather jacket, eyes that have seen too much). She walks with purpose, checking over her shoulder every few steps." },
-    { id: "el-9", type: "character", text: "MORGAN" },
-    { id: "el-10", type: "parenthetical", text: "(into phone)" },
-    { id: "el-11", type: "dialogue", text: "I'm coming in. But not through the front." },
-    { id: "el-12", type: "action", text: "She hangs up. Ducks into an alley." },
-    { id: "el-13", type: "transition", text: "CUT TO:" },
-    { id: "el-14", type: "scene-heading", text: "INT. MORGAN'S APARTMENT — NIGHT" },
-    { id: "el-15", type: "action", text: "The apartment is sparse. A single lamp cuts through the dark. Morgan sits at the kitchen table, phone face-down in front of her." },
-    { id: "el-16", type: "action", text: "A knock at the door. She doesn't move." },
-    { id: "el-17", type: "character", text: "MORGAN" },
-    { id: "el-18", type: "parenthetical", text: "(without turning)" },
-    { id: "el-19", type: "dialogue", text: "It's open." },
-    { id: "el-20", type: "action", text: "Detective Cole enters. He surveys the room before finding her." },
-    { id: "el-21", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-22", type: "dialogue", text: "You weren't at the precinct. Martinez is asking questions." },
-    { id: "el-23", type: "character", text: "MORGAN" },
-    { id: "el-24", type: "dialogue", text: "Let him ask." },
-    { id: "el-25", type: "scene-heading", text: "INT. POLICE PRECINCT — DAY" },
-    { id: "el-26", type: "action", text: "The bullpen buzzes with activity. Phones ring. Officers move between desks. MARTINEZ (30s, sharp suit, ambitious) stands at a whiteboard, mapping connections." },
-    { id: "el-27", type: "character", text: "MARTINEZ" },
-    { id: "el-28", type: "dialogue", text: "She knows more than she's telling us. I can feel it." },
-    { id: "el-29", type: "scene-heading", text: "EXT. ROOFTOP — DAWN" },
-    { id: "el-30", type: "action", text: "The city sprawls below, still waking. Morgan stands at the edge, wind pulling at her jacket. She holds an envelope — unopened." },
-    { id: "el-31", type: "character", text: "MORGAN" },
-    { id: "el-32", type: "parenthetical", text: "(quiet)" },
-    { id: "el-33", type: "dialogue", text: "You don't get to decide when this ends." },
-    { id: "el-34", type: "scene-heading", text: "INT. INTERROGATION ROOM — DAY" },
-    { id: "el-35", type: "action", text: "Bare walls. A metal table. Two chairs. Morgan sits on one side, Cole on the other. A file folder between them." },
-    { id: "el-36", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-37", type: "dialogue", text: "Tell me about the night of the fourteenth." },
-    { id: "el-38", type: "character", text: "MORGAN" },
-    { id: "el-39", type: "parenthetical", text: "(long beat)" },
-    { id: "el-40", type: "dialogue", text: "Which part?" },
+    { id: "el-1", type: "action", text: "" },
   ],
 };
 
 const DEFAULT_TITLE_PAGE = {
   title: "Untitled Screenplay",
   credit: "written by",
-  author: "Writer",
+  author: "",
   source: "",
   draftDate: "",
   contact: "",
 };
 
-const INITIAL_MESSAGES = [
-  {
-    id: "m-1",
-    role: "assistant",
-    text: "I've read your screenplay. The tension between Morgan and Cole is compelling — her silence carries real weight. A few thoughts:\n\n• The phone buzzing in Scene 3 would be a natural beat — want me to write it in?\n• Cole feels reactive. You might give him one line that shows what *he's* afraid of, not just what he wants from Morgan.\n• The transition from Scene 2 to Scene 3 is strong. The rain to the sparse apartment is a nice tonal shift.",
-  },
-];
+const INITIAL_MESSAGES = [];
 // Page dimensions for visual page breaks
 const PAGE_HEIGHT = 880;
 const PAGE_GAP = 32;
@@ -532,207 +487,7 @@ export default function ScriptMind() {
   };
 
   const handleExportPDF = () => {
-    const doc = new jsPDF({ unit: "in", format: "letter" });
-    const PAGE_W = 8.5, PAGE_H = 11;
-    const ML = 1.5, MR = 1, MT = 1, MB = 1; // screenplay standard margins
-    const BODY_W = PAGE_W - ML - MR;
-    const FONT_SIZE = 12;
-    const LINE_H = FONT_SIZE * 1.6 / 72; // ~0.267in per line
-
-    const stripHtml = (html) => html.replace(/<[^>]*>/g, "");
-
-    // Element-specific left indents and max widths (in inches from left margin)
-    const elLayout = {
-      "scene-heading":  { indent: 0, width: BODY_W, upper: true, bold: true },
-      "action":         { indent: 0, width: BODY_W },
-      "character":      { indent: 2.2, width: BODY_W - 2.2, upper: true, bold: true },
-      "dialogue":       { indent: 1, width: 3.5 },
-      "parenthetical":  { indent: 1.6, width: 2.1 },
-      "transition":     { indent: 0, width: BODY_W, upper: true, align: "right" },
-      "shot":           { indent: 0, width: BODY_W, upper: true, bold: true },
-      "centered":       { indent: 0, width: BODY_W, align: "center" },
-    };
-
-    let pageNum = 0;
-    let y = MT;
-    let sceneNum = 0;
-
-    const newPage = () => {
-      if (pageNum > 0) doc.addPage();
-      pageNum++;
-      y = MT;
-    };
-
-    const checkPageBreak = (needed) => {
-      if (y + needed > PAGE_H - MB) {
-        // Page number footer
-        doc.setFont("Courier", "normal");
-        doc.setFontSize(10);
-        doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
-        newPage();
-      }
-    };
-
-    const writeLines = (text, layout) => {
-      doc.setFont("Courier", layout.bold ? "bold" : "normal");
-      doc.setFontSize(FONT_SIZE);
-      let str = stripHtml(text);
-      if (layout.upper) str = str.toUpperCase();
-      const maxW = layout.width;
-      const lines = doc.splitTextToSize(str, maxW);
-      for (const line of lines) {
-        checkPageBreak(LINE_H);
-        const xBase = ML + layout.indent;
-        if (layout.align === "right") {
-          doc.text(line, ML + BODY_W, y, { align: "right" });
-        } else if (layout.align === "center") {
-          doc.text(line, ML + BODY_W / 2, y, { align: "center" });
-        } else {
-          doc.text(line, xBase, y);
-        }
-        y += LINE_H;
-      }
-    };
-
-    // ── Title Page ──
-    newPage();
-    const tp = titlePage;
-    doc.setFont("Courier", "bold");
-    doc.setFontSize(24);
-    const titleText = tp.title || scriptTitle;
-    doc.text(titleText, PAGE_W / 2, 4, { align: "center" });
-    doc.setFontSize(FONT_SIZE);
-    doc.setFont("Courier", "normal");
-    let titleY = 4.5;
-    if (tp.credit) { doc.text(tp.credit, PAGE_W / 2, titleY, { align: "center" }); titleY += 0.3; }
-    if (tp.author) { doc.setFont("Courier", "bold"); doc.text(tp.author, PAGE_W / 2, titleY, { align: "center" }); doc.setFont("Courier", "normal"); titleY += 0.3; }
-    if (tp.source) { doc.text(`Based on ${tp.source}`, PAGE_W / 2, titleY, { align: "center" }); }
-    // Bottom-right contact block
-    let contactY = PAGE_H - 2;
-    doc.setFontSize(10);
-    if (tp.draftDate) { doc.text(tp.draftDate, PAGE_W - MR - 1, contactY); contactY += 0.25; }
-    if (tp.contact) {
-      const contactLines = tp.contact.split("\n");
-      for (const cl of contactLines) { doc.text(cl, PAGE_W - MR - 1, contactY); contactY += 0.25; }
-    }
-
-    // ── Screenplay Content ──
-    newPage();
-    const SPACING_AFTER = {
-      "scene-heading": LINE_H,
-      "action": LINE_H,
-      "character": 0,
-      "dialogue": LINE_H,
-      "parenthetical": 0,
-      "transition": LINE_H,
-      "shot": LINE_H,
-      "centered": LINE_H,
-    };
-
-    // Collect dialogue group indices starting from a character element
-    const collectPdfGroup = (startIdx) => {
-      const group = [startIdx];
-      for (let j = startIdx + 1; j < elements.length; j++) {
-        if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
-        else break;
-      }
-      return group;
-    };
-
-    // Measure how many lines a group would take
-    const measureGroup = (indices) => {
-      let lines = 0;
-      for (const idx of indices) {
-        const el = elements[idx];
-        const layout = elLayout[el.type] || elLayout["action"];
-        let str = stripHtml(el.text);
-        if (layout.upper) str = str.toUpperCase();
-        doc.setFont("Courier", layout.bold ? "bold" : "normal");
-        doc.setFontSize(FONT_SIZE);
-        lines += doc.splitTextToSize(str, layout.width).length;
-      }
-      return lines;
-    };
-
-    // Write lines at a specific x offset with a given max width (for dual dialogue columns)
-    const writeLinesAt = (text, layout, xOffset, maxW) => {
-      doc.setFont("Courier", layout.bold ? "bold" : "normal");
-      doc.setFontSize(FONT_SIZE);
-      let str = stripHtml(text);
-      if (layout.upper) str = str.toUpperCase();
-      const lines = doc.splitTextToSize(str, maxW);
-      for (const line of lines) {
-        checkPageBreak(LINE_H);
-        doc.text(line, xOffset, y);
-        y += LINE_H;
-      }
-    };
-
-    let ei = 0;
-    while (ei < elements.length) {
-      const el = elements[ei];
-
-      // Detect dual dialogue pair
-      if (el.type === "character" && !el.dual) {
-        const leftGroup = collectPdfGroup(ei);
-        const nextIdx = leftGroup[leftGroup.length - 1] + 1;
-        if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
-          const rightGroup = collectPdfGroup(nextIdx);
-          const HALF = BODY_W / 2 - 0.1;
-          const leftLines = measureGroup(leftGroup);
-          const rightLines = measureGroup(rightGroup);
-          const totalLines = Math.max(leftLines, rightLines);
-          checkPageBreak(totalLines * LINE_H);
-          const startY = y;
-          // Left column
-          for (const idx of leftGroup) {
-            const ge = elements[idx];
-            const gl = ge.type === "character"
-              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
-              : ge.type === "parenthetical"
-              ? { indent: 0.3, width: HALF - 0.6 }
-              : { indent: 0, width: HALF };
-            writeLinesAt(ge.text, gl, ML + gl.indent, gl.width);
-          }
-          const leftEndY = y;
-          // Right column
-          y = startY;
-          for (const idx of rightGroup) {
-            const ge = elements[idx];
-            const gl = ge.type === "character"
-              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
-              : ge.type === "parenthetical"
-              ? { indent: 0.3, width: HALF - 0.6 }
-              : { indent: 0, width: HALF };
-            writeLinesAt(ge.text, gl, ML + HALF + 0.2 + gl.indent, gl.width);
-          }
-          y = Math.max(leftEndY, y) + LINE_H;
-          ei = rightGroup[rightGroup.length - 1] + 1;
-          continue;
-        }
-      }
-
-      const layout = elLayout[el.type] || elLayout["action"];
-      if (el.type === "scene-heading") {
-        sceneNum++;
-        if (y > MT + LINE_H) y += LINE_H;
-        checkPageBreak(LINE_H * 2);
-        doc.setFont("Courier", "bold");
-        doc.setFontSize(FONT_SIZE);
-        doc.text(`${sceneNum}`, ML - 0.5, y, { align: "right" });
-        doc.text(`${sceneNum}`, ML + BODY_W + 0.15, y);
-      }
-      writeLines(el.text, layout);
-      y += SPACING_AFTER[el.type] ?? LINE_H;
-      ei++;
-    }
-
-    // Final page number
-    doc.setFont("Courier", "normal");
-    doc.setFontSize(10);
-    doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
-
-    doc.save(`${scriptTitle}.pdf`);
+    exportPDF(elements, titlePage, scriptTitle);
     showNotification("Exported PDF");
   };
 

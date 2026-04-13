@@ -18,7 +18,7 @@ npm run lint     # eslint
 ## File Structure
 ```
 src/
-  ScriptMind.jsx    # Main app component — constants + ScriptMind component (~1450 lines)
+  ScriptMind.jsx    # Main app component — constants + ScriptMind component (~1200 lines)
   App.jsx           # Root wrapper
   main.jsx          # Entry point
   components/
@@ -37,6 +37,7 @@ src/
     elementTypes.js # getNextType, cycleType, autoFormatText, TAB_CYCLE
     export.js       # elementsToFDX, elementsToFountain
     import.js       # parseFountain(text, fallbackElements), parseFDX(xmlText, fallbackElements)
+    pdfExport.js    # exportPDF(elements, titlePage, scriptTitle) — jsPDF-based PDF generation
 ```
 
 ## ScriptMind.jsx Structure
@@ -62,5 +63,5 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 
 ## Import/Export
 - Import accepts `.fountain`, `.fdx`, `.txt` — parsers return fallback (`DEFAULT_SCRIPT.elements`) on failure
-- Export: PDF (jsPDF), `.fountain`, `.fdx` (Final Draft XML)
+- Export: PDF (`utils/pdfExport.js`), `.fountain`, `.fdx` (Final Draft XML)
 - `parseFountain` and `parseFDX` in `utils/import.js` take a second `fallbackElements` parameter
