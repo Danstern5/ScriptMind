@@ -1,26 +1,31 @@
 # ScriptMind
 
-Screenplay editor with AI collaboration. Fully client-side, no backend.
+Screenplay editor with AI collaboration.
 
 ## Stack
-- React 19 + Vite 7 + Tailwind CSS 4 + jsPDF
+- **Frontend:** React 19 + Vite 7 + Tailwind CSS 4 + jsPDF
+- **Backend:** FastAPI + PostgreSQL (async SQLAlchemy + asyncpg) + JWT auth
 - No TypeScript (JSX only)
-- localStorage for persistence
 - Anthropic Claude API (client-side calls)
 
 ## Commands
 ```
-npm run dev      # start dev server
+# Frontend
+npm run dev      # start dev server (localhost:5173)
 npm run build    # production build
 npm run lint     # eslint
+
+# Backend
+cd backend && uvicorn app.main:app --reload  # start API server (localhost:8000)
 ```
 
-## File Structure
+## Frontend File Structure
 ```
 src/
-  ScriptMind.jsx    # Main app component — constants + ScriptMind component (~1200 lines)
-  App.jsx           # Root wrapper
+  ScriptMind.jsx    # Main app component — state, handlers, layout shell (~490 lines)
+  App.jsx           # Root wrapper — AuthProvider gate (renders AuthPage or ScriptMind)
   main.jsx          # Entry point
+  index.css         # Tailwind + Google Fonts imports
   components/
     Icons.jsx              # SendIcon, PlusIcon, FileIcon, DownloadIcon, SparkleIcon, ChevronIcon
     ContextMenu.jsx        # Right-click context menu
@@ -29,7 +34,19 @@ src/
     TitlePageEditor.jsx    # Modal for editing title page fields
     RenameCharacterModal.jsx # Modal for renaming characters
     FileMenu.jsx           # File dropdown (new, import, export, title page)
+    Sidebar.jsx            # Scene list, stats, "Add Scene" button
+    EditorArea.jsx         # Toolbar + paginated screenplay editor + page headers/footers
+    AIPanel.jsx            # Chat header, messages, streaming indicator, input, quick actions
+    AuthPage.jsx           # Login/signup page (email + password, mode toggle)
+  contexts/
+    AuthContext.jsx        # AuthProvider — user/token/loading state, login/signup/logout methods
+  hooks/
+    useAIChat.js           # AI chat state & handlers (messages, streaming, rewrite, suggest)
+    usePageLayout.js       # Page layout (dead-zone push, page count, currentPage, MORE/CONT'D markers)
+    useFileOperations.js   # File I/O (new, import, export, drag & drop)
+    useAuth.js             # Convenience hook for AuthContext
   utils/
+    api.js          # apiPost(), apiGet() — fetch wrapper with API_BASE from VITE_API_BASE env
     ids.js          # uid(), msgId() — unique ID generators
     html.js         # stripHtml, escapeXml, htmlToFdxTextNodes, htmlToFountain
     screenplay.js   # getScenes, getWordCount, getPageCount, getSmartSuggestions, getCurrentSceneIndex
@@ -39,6 +56,42 @@ src/
     import.js       # parseFountain(text, fallbackElements), parseFDX(xmlText, fallbackElements)
     pdfExport.js    # exportPDF(elements, titlePage, scriptTitle) — jsPDF-based PDF generation
 ```
+
+## Backend File Structure
+```
+backend/
+  .env                # DATABASE_URL, JWT_SECRET
+  .env.example        # Template
+  requirements.txt    # Python deps (fastapi, sqlalchemy, asyncpg, passlib, pyjwt, etc.)
+  Dockerfile          # Railway deployment
+  alembic.ini         # Migration config
+  alembic/
+    versions/         # Migration files (users + scripts tables)
+  app/
+    main.py           # FastAPI app — CORS middleware, router includes, /api/health
+    config.py         # Settings (DATABASE_URL, JWT_SECRET, CORS_ORIGINS, token expiry)
+    database.py       # AsyncSession factory & engine
+    dependencies.py   # get_db(), get_current_user() — shared FastAPI dependencies
+    models/
+      user.py         # User (id UUID, email, password_hash, created_at, updated_at)
+      script.py       # Script (id UUID, user_id FK, title, elements JSON, title_page JSON)
+    routers/
+      auth.py         # POST /api/auth/signup, POST /api/auth/login, GET /api/auth/me
+      scripts.py      # CRUD /api/scripts/ — all protected by get_current_user
+    schemas/
+      user.py         # UserSignup, UserLogin, UserResponse, AuthResponse
+      script.py       # ScriptCreate, ScriptUpdate, ScriptResponse, ScriptListItem
+    services/
+      auth.py         # hash_password, verify_password, create_access_token, decode_access_token
+      scripts.py      # get_scripts_by_user, get_script_by_id, create_script, update_script, delete_script
+```
+
+## Auth System
+- JWT (HS256) with 7-day expiry, stored in localStorage as `scriptmind_token`
+- Password hashing: bcrypt via passlib
+- Frontend: AuthContext validates token on mount via `GET /api/auth/me`
+- All `/api/scripts/` routes require `Authorization: Bearer <token>`
+- CORS allows `localhost:5173` and `localhost:3000`
 
 ## ScriptMind.jsx Structure
 Top-level constants: `ELEMENT_TYPES`, `DEFAULT_SCRIPT`, `DEFAULT_TITLE_PAGE`, `INITIAL_MESSAGES`, page layout constants (`PAGE_HEIGHT`, `PAGE_GAP`, `HEADER_HEIGHT`, `FOOTER_HEIGHT`).
@@ -57,8 +110,8 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 
 ## Page Layout System
 - Visual pagination using SVG clipPath to clip content into page-sized regions
-- Constants: `PAGE_HEIGHT=880`, `PAGE_GAP=32`, `HEADER_HEIGHT=44`, `FOOTER_HEIGHT=32`
-- Single useEffect owns both dead-zone push (elements crossing page boundaries get paddingTop) and numPages calculation (measured after padding via scrollHeight)
+- Constants exported from `src/hooks/usePageLayout.js`: `PAGE_HEIGHT=880`, `PAGE_GAP=32`, `HEADER_HEIGHT=44`, `FOOTER_HEIGHT=32`
+- `usePageLayout` hook owns dead-zone push (elements crossing page boundaries get paddingTop), numPages calculation, currentPage tracking, scroll-into-view, and (MORE)/(CONT'D) markers
 - Auto-scrolls active element into view when off-screen
 - `getPageCount()` in utils/screenplay.js is a word-based estimate (250 words/page) for display only — not used for visual layout
 
@@ -67,25 +120,3 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 - Export: PDF (`utils/pdfExport.js`), `.fountain`, `.fdx` (Final Draft XML)
 - `parseFountain` and `parseFDX` in `utils/import.js` take a second `fallbackElements` parameter
 
-## Refactor Plan — ScriptMind.jsx Extractions
-Sequential extraction to break ScriptMind.jsx (~1200 lines) into hooks and sub-components. One at a time, commit after each.
-
-### 1. `useAIChat` → `src/hooks/useAIChat.js` — DONE
-Lines 494–571 (~78 lines): `sendMessage`, `handleRewriteScene`, `handleSuggestNext`
-State: `messages`, `chatInput`, `isStreaming`, chat scroll effect
-Deps: `elements`, `currentScene`, `activeElId`, `stripHtml`, `getCurrentSceneIndex`, `msgId`
-
-### 2. `usePageLayout` → `src/hooks/usePageLayout.js` — NOT STARTED
-Lines 116–206 (~90 lines): dead-zone push, page count, currentPage, (MORE)/(CONT'D) markers
-State: `numPages`, `currentPage`, `pageBreakMarkers`, `contentRef`
-Deps: `elements`, `activeElId`, `PAGE_HEIGHT`, `PAGE_GAP`, `HEADER_HEIGHT`, `FOOTER_HEIGHT`, `stripHtml`
-
-### 3. `useFileOperations` → `src/hooks/useFileOperations.js` — NOT STARTED
-Lines 396–492 (~97 lines): `handleNew`, `processFile`, `handleFileChange`, drag handlers (4), export handlers (3)
-State: `isDragging`, `dragCounter` ref, `fileInputRef`
-Deps: `setElements`, `setActiveElId`, `setScriptTitle`, `setTitlePage`, `setMessages`, `showNotification`, `elements`, `scriptTitle`, `titlePage`, import/export utils
-
-### 4. JSX sub-components — NOT STARTED
-- `src/components/Sidebar.jsx` (~70 lines) — scene list, stats, "Add Scene"
-- `src/components/EditorArea.jsx` (~180 lines) — toolbar + paginated editor + page headers/footers
-- `src/components/AIPanel.jsx` (~120 lines) — chat header, messages, streaming, input, quick actions
