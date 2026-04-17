@@ -1,845 +1,110 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { jsPDF } from "jspdf";
+import { exportPDF } from "./utils/pdfExport";
+import { uid } from "./utils/ids";
+import { stripHtml } from "./utils/html";
+import { getScenes, getWordCount, getPageCount, getSmartSuggestions, getCurrentSceneIndex } from "./utils/screenplay";
+import { getNextType, cycleType, autoFormatText, TAB_CYCLE } from "./utils/elementTypes";
+import { elementsToFDX, elementsToFountain } from "./utils/export";
+import { parseFountain, parseFDX } from "./utils/import";
+import { SendIcon, PlusIcon, FileIcon, DownloadIcon, SparkleIcon, ChevronIcon } from "./components/Icons";
+import useAIChat from "./hooks/useAIChat";
+import ContextMenu from "./components/ContextMenu";
+import ScriptElement from "./components/ScriptElement";
+import AIMessage from "./components/AIMessage";
+import TitlePageEditor from "./components/TitlePageEditor";
+import RenameCharacterModal from "./components/RenameCharacterModal";
+import FileMenu from "./components/FileMenu";
+import ScenarioCard from "./components/ScenarioCard";
+import SelectionToolbar from "./components/SelectionToolbar";
+import ScriptBible from "./components/ScriptBible";
 
 // ─── Constants ───
 const ELEMENT_TYPES = ["scene-heading", "action", "character", "dialogue", "parenthetical", "transition", "shot", "centered"];
-const TAB_CYCLE = ["action", "character", "dialogue", "action"];
 
 const DEFAULT_SCRIPT = {
   title: "Untitled Screenplay",
-  author: "Writer",
+  author: "",
   elements: [
-    { id: "el-1", type: "scene-heading", text: "INT. DETECTIVE'S OFFICE — DAY" },
-    { id: "el-2", type: "action", text: "A cluttered desk drowns under case files. Coffee rings stain every surface. DETECTIVE COLE (50s, rumpled suit, reading glasses he refuses to wear in public) stares at a corkboard covered in photographs." },
-    { id: "el-3", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-4", type: "parenthetical", text: "(to himself)" },
-    { id: "el-5", type: "dialogue", text: "Something's not right." },
-    { id: "el-6", type: "action", text: "He pulls a photograph from the board. Studies it." },
-    { id: "el-7", type: "scene-heading", text: "EXT. RAINY STREET — NIGHT" },
-    { id: "el-8", type: "action", text: "Rain hammers the pavement. A lone figure moves through the downpour — MORGAN (40s, worn leather jacket, eyes that have seen too much). She walks with purpose, checking over her shoulder every few steps." },
-    { id: "el-9", type: "character", text: "MORGAN" },
-    { id: "el-10", type: "parenthetical", text: "(into phone)" },
-    { id: "el-11", type: "dialogue", text: "I'm coming in. But not through the front." },
-    { id: "el-12", type: "action", text: "She hangs up. Ducks into an alley." },
-    { id: "el-13", type: "transition", text: "CUT TO:" },
-    { id: "el-14", type: "scene-heading", text: "INT. MORGAN'S APARTMENT — NIGHT" },
-    { id: "el-15", type: "action", text: "The apartment is sparse. A single lamp cuts through the dark. Morgan sits at the kitchen table, phone face-down in front of her." },
-    { id: "el-16", type: "action", text: "A knock at the door. She doesn't move." },
-    { id: "el-17", type: "character", text: "MORGAN" },
-    { id: "el-18", type: "parenthetical", text: "(without turning)" },
-    { id: "el-19", type: "dialogue", text: "It's open." },
-    { id: "el-20", type: "action", text: "Detective Cole enters. He surveys the room before finding her." },
-    { id: "el-21", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-22", type: "dialogue", text: "You weren't at the precinct. Martinez is asking questions." },
-    { id: "el-23", type: "character", text: "MORGAN" },
-    { id: "el-24", type: "dialogue", text: "Let him ask." },
-    { id: "el-25", type: "scene-heading", text: "INT. POLICE PRECINCT — DAY" },
-    { id: "el-26", type: "action", text: "The bullpen buzzes with activity. Phones ring. Officers move between desks. MARTINEZ (30s, sharp suit, ambitious) stands at a whiteboard, mapping connections." },
-    { id: "el-27", type: "character", text: "MARTINEZ" },
-    { id: "el-28", type: "dialogue", text: "She knows more than she's telling us. I can feel it." },
-    { id: "el-29", type: "scene-heading", text: "EXT. ROOFTOP — DAWN" },
-    { id: "el-30", type: "action", text: "The city sprawls below, still waking. Morgan stands at the edge, wind pulling at her jacket. She holds an envelope — unopened." },
-    { id: "el-31", type: "character", text: "MORGAN" },
-    { id: "el-32", type: "parenthetical", text: "(quiet)" },
-    { id: "el-33", type: "dialogue", text: "You don't get to decide when this ends." },
-    { id: "el-34", type: "scene-heading", text: "INT. INTERROGATION ROOM — DAY" },
-    { id: "el-35", type: "action", text: "Bare walls. A metal table. Two chairs. Morgan sits on one side, Cole on the other. A file folder between them." },
-    { id: "el-36", type: "character", text: "DETECTIVE COLE" },
-    { id: "el-37", type: "dialogue", text: "Tell me about the night of the fourteenth." },
-    { id: "el-38", type: "character", text: "MORGAN" },
-    { id: "el-39", type: "parenthetical", text: "(long beat)" },
-    { id: "el-40", type: "dialogue", text: "Which part?" },
+    { id: "el-1", type: "action", text: "" },
   ],
 };
 
 const DEFAULT_TITLE_PAGE = {
   title: "Untitled Screenplay",
   credit: "written by",
-  author: "Writer",
+  author: "",
   source: "",
   draftDate: "",
   contact: "",
 };
 
-const INITIAL_MESSAGES = [
+// Placeholder scenario content for Alternative Scene Analysis
+const PLACEHOLDER_SCENARIOS = [
   {
-    id: "m-1",
-    role: "assistant",
-    text: "I've read your screenplay. The tension between Morgan and Cole is compelling — her silence carries real weight. A few thoughts:\n\n• The phone buzzing in Scene 3 would be a natural beat — want me to write it in?\n• Cole feels reactive. You might give him one line that shows what *he's* afraid of, not just what he wants from Morgan.\n• The transition from Scene 2 to Scene 3 is strong. The rain to the sparse apartment is a nice tonal shift.",
+    title: "The Confession",
+    description: "Marcus finally says what he's been holding back the entire act. The confrontation becomes an admission, and the power dynamic in the room shifts completely.",
+    impact: {
+      tone: "The scene moves from hostile to devastatingly quiet — the silence after the confession lands harder than any argument.",
+      character: "Marcus loses his armor here; whatever happens next, the audience now knows who he really is.",
+      plot: "This choice accelerates the second act — there's no going back to the status quo after this moment.",
+    },
+    preview: `INT. INTERROGATION ROOM - NIGHT\n\nMarcus sets the folder down. A long silence.\n\nMARCUS\nI was there.\n\nDETECTIVE CHEN\nExcuse me?\n\nMARCUS\n(quietly)\nThe night it happened. I was\nthere the whole time.\n\nDetective Chen leans forward.\n\nDETECTIVE CHEN\nThen why didn't you—\n\nMARCUS\nBecause I was afraid.`,
+    previewOpen: false,
+    impactOpen: false,
+  },
+  {
+    title: "The Deflection",
+    description: "Marcus almost says it — but doesn't. He redirects, lies convincingly, and leaves the scene with the secret intact. The tension doesn't resolve; it calcifies.",
+    impact: {
+      tone: "Unease replaces confrontation — the audience knows more than the other characters, which creates a slow dread.",
+      character: "Marcus becomes more isolated by his choice; the gap between him and everyone else quietly widens.",
+      plot: "The secret survives into Act 3, raising the stakes of the eventual reveal.",
+    },
+    preview: `INT. INTERROGATION ROOM - NIGHT\n\nMarcus meets her eyes without flinching.\n\nMARCUS\nI don't know what you're\nlooking for, but it isn't me.\n\nDETECTIVE CHEN\nWe have a witness.\n\nMARCUS\nThen talk to your witness.\n\nHe stands. Adjusts his jacket.\n\nMARCUS (CONT'D)\nAre we done here?\n\nDetective Chen watches him go.\nShe knows he's lying.`,
+    previewOpen: false,
+    impactOpen: false,
+  },
+  {
+    title: "The Rupture",
+    description: "The scene escalates beyond what either character intended. Something gets said or done that can't be taken back — not a confession, but a fracture.",
+    impact: {
+      tone: "Volatile and destabilizing — the kind of scene the audience will be talking about afterward.",
+      character: "Both characters are changed, not just Marcus; the relationship itself becomes a casualty.",
+      plot: "The rupture creates a new problem that has to be dealt with before the story's central conflict can resolve.",
+    },
+    preview: `INT. INTERROGATION ROOM - NIGHT\n\nMARCUS\nYou want the truth? Fine.\n\nHe grabs the folder. Throws it.\n\nMARCUS (CONT'D)\nYou built this case on nothing.\nYou dragged my family into this—\n\nDETECTIVE CHEN\nSit down, Marcus.\n\nMARCUS\nI'm done sitting down.\n\nThe door. He reaches for it.\n\nDETECTIVE CHEN\nIf you walk out that door,\nI can't help you anymore.\n\nHe stops. Doesn't turn around.`,
+    previewOpen: false,
+    impactOpen: false,
   },
 ];
 
-// ─── Utility Functions ───
-const uid = () => "el-" + Math.random().toString(36).slice(2, 9);
-const msgId = () => "m-" + Math.random().toString(36).slice(2, 9);
-
-function stripHtml(html) {
-  return html.replace(/<[^>]*>/g, "");
-}
-
-function escapeXml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function htmlToFdxTextNodes(html) {
-  const plain = html.replace(/<br\s*\/?>/gi, "\n");
-  const parts = [];
-  const tagRe = /<(b|strong|i|em|u)>(.*?)<\/\1>/gi;
-  let last = 0;
-  let m;
-  while ((m = tagRe.exec(plain)) !== null) {
-    if (m.index > last) {
-      const text = plain.slice(last, m.index).replace(/<[^>]*>/g, "");
-      if (text) parts.push({ style: "", text });
-    }
-    const tag = m[1].toLowerCase();
-    const style = (tag === "b" || tag === "strong") ? "Bold" : tag === "i" || tag === "em" ? "Italic" : "Underline";
-    parts.push({ style, text: m[2].replace(/<[^>]*>/g, "") });
-    last = m.index + m[0].length;
-  }
-  if (last < plain.length) {
-    const text = plain.slice(last).replace(/<[^>]*>/g, "");
-    if (text) parts.push({ style: "", text });
-  }
-  if (parts.length === 0) parts.push({ style: "", text: plain.replace(/<[^>]*>/g, "") });
-  return parts.map(p =>
-    p.style
-      ? `<Text Style="${p.style}">${escapeXml(p.text)}</Text>`
-      : `<Text>${escapeXml(p.text)}</Text>`
-  ).join("");
-}
-
-const FDX_TYPE_MAP = {
-  "scene-heading": "Scene Heading",
-  "action": "Action",
-  "character": "Character",
-  "dialogue": "Dialogue",
-  "parenthetical": "Parenthetical",
-  "transition": "Transition",
-  "shot": "Shot",
-  "centered": "Action",
+const DEFAULT_SCRIPT_BIBLE = {
+  logline: { writer: "", aiReading: "" },
+  genre: { writer: "", aiReading: "" },
+  themes: { writer: "", aiReading: "" },
+  synopsis: { writer: "", aiReading: "" },
+  characters: {
+    "MARCUS": { role: "Protagonist", want: "", need: "", wound: "", voice: "", aiReading: "" },
+    "DETECTIVE CHEN": { role: "Antagonist / Foil", want: "", need: "", wound: "", voice: "", aiReading: "" },
+  },
+  worldFacts: [
+    "Set in present-day Detroit, winter",
+    "Marcus has been sober for 4 years",
+    "The Hargrove case was officially closed in 2009",
+    "Elena does not know Marcus was involved",
+  ],
+  actBreakdown: {
+    act1: { writer: "", aiReading: "" },
+    act2: { writer: "", aiReading: "" },
+    act3: { writer: "", aiReading: "" },
+  },
 };
-
-function elementsToFDX(elements, title = "Untitled", tp = null) {
-  const t = tp || { title, credit: "written by", author: "Writer", source: "", draftDate: "", contact: "" };
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  xml += `<FinalDraft DocumentType="Script" Template="No" Version="5">\n`;
-  xml += `  <Content>\n`;
-  const collectFdxGroup = (startIdx) => {
-    const group = [startIdx];
-    for (let j = startIdx + 1; j < elements.length; j++) {
-      if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
-      else break;
-    }
-    return group;
-  };
-  const writeParagraph = (el, dualPos) => {
-    const fdxType = FDX_TYPE_MAP[el.type] || "Action";
-    const alignment = el.type === "centered" ? ` Alignment="Center"` : "";
-    const pos = dualPos ? ` Position="${dualPos}"` : "";
-    xml += `    <Paragraph Type="${fdxType}"${alignment}${pos}>\n`;
-    xml += `      ${htmlToFdxTextNodes(el.text)}\n`;
-    xml += `    </Paragraph>\n`;
-  };
-  let fi = 0;
-  while (fi < elements.length) {
-    const el = elements[fi];
-    if (el.type === "character" && !el.dual) {
-      const leftGroup = collectFdxGroup(fi);
-      const nextIdx = leftGroup[leftGroup.length - 1] + 1;
-      if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
-        const rightGroup = collectFdxGroup(nextIdx);
-        for (const idx of leftGroup) writeParagraph(elements[idx], "Left");
-        for (const idx of rightGroup) writeParagraph(elements[idx], "Right");
-        fi = rightGroup[rightGroup.length - 1] + 1;
-        continue;
-      }
-    }
-    writeParagraph(el, null);
-    fi++;
-  }
-  xml += `  </Content>\n`;
-  xml += `  <TitlePage>\n    <Content>\n`;
-  xml += `      <Paragraph Type="Title"><Text>${escapeXml(t.title || title)}</Text></Paragraph>\n`;
-  if (t.credit) xml += `      <Paragraph Type="Credit"><Text>${escapeXml(t.credit)}</Text></Paragraph>\n`;
-  if (t.author) xml += `      <Paragraph Type="Author"><Text>${escapeXml(t.author)}</Text></Paragraph>\n`;
-  if (t.source) xml += `      <Paragraph Type="Source"><Text>${escapeXml(t.source)}</Text></Paragraph>\n`;
-  if (t.draftDate) xml += `      <Paragraph Type="Draft Date"><Text>${escapeXml(t.draftDate)}</Text></Paragraph>\n`;
-  if (t.contact) xml += `      <Paragraph Type="Contact"><Text>${escapeXml(t.contact)}</Text></Paragraph>\n`;
-  xml += `    </Content>\n  </TitlePage>\n`;
-  xml += `</FinalDraft>\n`;
-  return xml;
-}
-
-function htmlToFountain(html) {
-  return html
-    .replace(/<b>(.*?)<\/b>/gi, "**$1**")
-    .replace(/<strong>(.*?)<\/strong>/gi, "**$1**")
-    .replace(/<i>(.*?)<\/i>/gi, "*$1*")
-    .replace(/<em>(.*?)<\/em>/gi, "*$1*")
-    .replace(/<u>(.*?)<\/u>/gi, "_$1_")
-    .replace(/<[^>]*>/g, "");
-}
-
-function getScenes(elements) {
-  const scenes = [];
-  elements.forEach((el, idx) => {
-    if (el.type === "scene-heading") {
-      scenes.push({ index: idx, text: el.text, id: el.id });
-    }
-  });
-  return scenes;
-}
-
-function getWordCount(elements) {
-  return elements.reduce((sum, el) => sum + stripHtml(el.text).split(/\s+/).filter(Boolean).length, 0);
-}
-
-function getPageCount(elements) {
-  // Rough: ~250 words per page for screenplay
-  return Math.max(1, Math.ceil(getWordCount(elements) / 250));
-}
-
-// ─── SmartType Autocomplete ───
-const COMMON_TRANSITIONS = ["CUT TO:", "FADE OUT.", "FADE IN:", "SMASH CUT TO:", "MATCH CUT TO:", "JUMP CUT TO:", "DISSOLVE TO:", "TIME CUT:", "FREEZE FRAME"];
-const SCENE_PREFIXES = ["INT. ", "EXT. ", "INT./EXT. ", "I/E. "];
-const TIMES_OF_DAY = [" — DAY", " — NIGHT", " — DAWN", " — DUSK", " — MORNING", " — AFTERNOON", " — EVENING", " — LATER", " — CONTINUOUS", " — MOMENTS LATER"];
-
-function getSmartSuggestions(elements, currentEl) {
-  if (!currentEl) return [];
-  const query = stripHtml(currentEl.text).toUpperCase();
-
-  if (currentEl.type === "character") {
-    const names = [...new Set(
-      elements.filter(e => e.type === "character").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
-    )];
-    if (!query) return names.slice(0, 8);
-    return names.filter(n => n.startsWith(query) && n !== query).slice(0, 6);
-  }
-
-  if (currentEl.type === "scene-heading") {
-    // If empty or just started, suggest prefixes
-    if (!query || query.length <= 3) {
-      const prefixMatches = SCENE_PREFIXES.filter(p => p.startsWith(query));
-      if (prefixMatches.length > 0) return prefixMatches;
-    }
-    // If we have a prefix, suggest known locations
-    const locations = [...new Set(
-      elements.filter(e => e.type === "scene-heading").map(e => stripHtml(e.text).toUpperCase().trim()).filter(Boolean)
-    )];
-    // Also suggest times of day if location is partially typed
-    const hasTime = TIMES_OF_DAY.some(t => query.includes(t.trim()));
-    if (!hasTime && query.length > 5) {
-      const timeMatches = TIMES_OF_DAY.map(t => query + t);
-      const locMatches = locations.filter(l => l.startsWith(query) && l !== query);
-      return [...locMatches, ...timeMatches].slice(0, 6);
-    }
-    return locations.filter(l => l.startsWith(query) && l !== query).slice(0, 6);
-  }
-
-  if (currentEl.type === "transition") {
-    if (!query) return COMMON_TRANSITIONS.slice(0, 6);
-    return COMMON_TRANSITIONS.filter(t => t.startsWith(query) && t !== query).slice(0, 6);
-  }
-
-  return [];
-}
 
 // Page dimensions for visual page breaks
 const PAGE_HEIGHT = 880;
 const PAGE_GAP = 32;
 const HEADER_HEIGHT = 44; // Reserved header margin (page number area)
 const FOOTER_HEIGHT = 32; // Reserved footer margin
-
-function getCurrentSceneIndex(elements, activeElId) {
-  let sceneIdx = 0;
-  for (let i = 0; i < elements.length; i++) {
-    if (elements[i].type === "scene-heading") sceneIdx++;
-    if (elements[i].id === activeElId) return sceneIdx;
-  }
-  return sceneIdx;
-}
-
-function getNextType(currentType) {
-  if (currentType === "character") return "dialogue";
-  if (currentType === "dialogue") return "action";
-  if (currentType === "parenthetical") return "dialogue";
-  if (currentType === "scene-heading") return "action";
-  if (currentType === "transition") return "action";
-  if (currentType === "shot") return "action";
-  if (currentType === "centered") return "action";
-  return "action";
-}
-
-function cycleType(currentType) {
-  const idx = TAB_CYCLE.indexOf(currentType);
-  if (idx === -1) return "action";
-  return TAB_CYCLE[(idx + 1) % TAB_CYCLE.length];
-}
-
-function autoFormatText(type, text) {
-  if (type === "scene-heading") {
-    let t = text.toUpperCase();
-    const plain = stripHtml(t);
-    if (plain && !plain.startsWith("INT.") && !plain.startsWith("EXT.") && !plain.startsWith("INT/EXT") && !plain.startsWith("I/E")) {
-      t = "INT. " + t;
-    }
-    return t;
-  }
-  if (type === "character") return text.toUpperCase();
-  if (type === "transition") return text.toUpperCase();
-  if (type === "shot") return text.toUpperCase();
-  return text;
-}
-
-function elementsToFountain(elements, title = "Untitled", tp = null) {
-  const t = tp || DEFAULT_TITLE_PAGE;
-  let fountain = `Title: ${t.title || title}\nCredit: ${t.credit || "written by"}\nAuthor: ${t.author || "Writer"}\n`;
-  if (t.source) fountain += `Source: ${t.source}\n`;
-  if (t.draftDate) fountain += `Draft date: ${t.draftDate}\n`;
-  if (t.contact) fountain += `Contact: ${t.contact}\n`;
-  fountain += "\n";
-  elements.forEach((el) => {
-    const text = htmlToFountain(el.text);
-    switch (el.type) {
-      case "scene-heading":
-        fountain += `\n${text}\n\n`;
-        break;
-      case "action":
-        fountain += `${text}\n\n`;
-        break;
-      case "character":
-        fountain += el.dual ? `${text} ^\n` : `${text}\n`;
-        break;
-      case "dialogue":
-        fountain += `${text}\n\n`;
-        break;
-      case "parenthetical":
-        fountain += `(${text.replace(/^\(|\)$/g, "")})\n`;
-        break;
-      case "transition":
-        fountain += `> ${text}\n\n`;
-        break;
-      case "shot":
-        fountain += `${text}\n\n`;
-        break;
-      case "centered":
-        fountain += `> ${text} <\n\n`;
-        break;
-      default:
-        fountain += `${text}\n\n`;
-    }
-  });
-  return fountain;
-}
-
-function parseFountain(text) {
-  const lines = text.split("\n");
-  const elements = [];
-  let i = 0;
-  // Skip title page
-  while (i < lines.length && lines[i].match(/^(Title|Credit|Author|Source|Draft date|Contact|Copyright):/i)) {
-    i++;
-    while (i < lines.length && lines[i].startsWith("  ")) i++;
-  }
-  while (i < lines.length && lines[i].trim() === "") i++;
-
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    if (!line) { i++; continue; }
-    // Centered text: > text <
-    if (line.match(/^>.*<$/)) {
-      elements.push({ id: uid(), type: "centered", text: line.replace(/^>\s*/, "").replace(/\s*<$/, "") });
-    } else if (line.match(/^(INT\.|EXT\.|INT\/EXT|I\/E)/i)) {
-      elements.push({ id: uid(), type: "scene-heading", text: line.toUpperCase() });
-    } else if (line.startsWith(">") && !line.startsWith(">>")) {
-      elements.push({ id: uid(), type: "transition", text: line.replace(/^>\s*/, "").toUpperCase() });
-    } else if (line.match(/^\(.*\)$/)) {
-      elements.push({ id: uid(), type: "parenthetical", text: line });
-    } else if (line === line.toUpperCase() && line.length > 1 && !line.match(/^(INT\.|EXT\.)/) && line.match(/^[A-Z]/)) {
-      elements.push({ id: uid(), type: "character", text: line });
-      // Next non-empty line is likely dialogue
-      i++;
-      while (i < lines.length) {
-        const dl = lines[i].trim();
-        if (!dl) break;
-        if (dl.match(/^\(.*\)$/)) {
-          elements.push({ id: uid(), type: "parenthetical", text: dl });
-        } else {
-          elements.push({ id: uid(), type: "dialogue", text: dl });
-        }
-        i++;
-      }
-      continue;
-    } else {
-      elements.push({ id: uid(), type: "action", text: line });
-    }
-    i++;
-  }
-  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
-}
-
-function parseFDX(xmlText) {
-  const elements = [];
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, "text/xml");
-  const paragraphs = doc.querySelectorAll("Paragraph");
-  paragraphs.forEach((p) => {
-    const pType = p.getAttribute("Type") || "";
-    const textNodes = p.querySelectorAll("Text");
-    const text = Array.from(textNodes).map((t) => t.textContent).join("");
-    if (!text.trim()) return;
-    const typeMap = {
-      "Scene Heading": "scene-heading",
-      "Action": "action",
-      "Character": "character",
-      "Dialogue": "dialogue",
-      "Parenthetical": "parenthetical",
-      "Transition": "transition",
-      "Shot": "shot",
-      "General": "centered",
-    };
-    elements.push({ id: uid(), type: typeMap[pType] || "action", text: text.trim() });
-  });
-  return elements.length > 0 ? elements : DEFAULT_SCRIPT.elements;
-}
-
-// ─── Icons ───
-function SendIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-    </svg>
-  );
-}
-function PlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-function FileIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-    </svg>
-  );
-}
-function DownloadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  );
-}
-function SparkleIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ animation: "rotateSpark 4s linear infinite" }}>
-      <path d="M12 0L14.59 8.41L23 11L14.59 13.59L12 22L9.41 13.59L1 11L9.41 8.41L12 0Z" />
-    </svg>
-  );
-}
-function ChevronIcon({ direction = "down" }) {
-  const rotation = direction === "up" ? 180 : direction === "left" ? 90 : direction === "right" ? -90 : 0;
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: `rotate(${rotation}deg)` }}>
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-// ─── Context Menu Component ───
-function ContextMenu({ x, y, items, onClose }) {
-  useEffect(() => {
-    const handler = () => onClose();
-    window.addEventListener("click", handler);
-    window.addEventListener("contextmenu", handler);
-    return () => { window.removeEventListener("click", handler); window.removeEventListener("contextmenu", handler); };
-  }, [onClose]);
-  return (
-    <div
-      style={{
-        position: "fixed", left: x, top: y, zIndex: 100,
-        background: "#1a1a1a", border: "1px solid #333", borderRadius: 6,
-        padding: 4, minWidth: 180, boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-      }}
-    >
-      {items.map((item, i) => (
-        <button
-          key={i}
-          onClick={(e) => { e.stopPropagation(); item.action(); onClose(); }}
-          className="w-full text-left"
-          style={{
-            padding: "6px 12px", borderRadius: 4, border: "none",
-            background: "transparent", color: item.checked ? "#e8e8e8" : "#888888",
-            fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: 8,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#333"; e.currentTarget.style.color = "#e8e8e8"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = item.checked ? "#e8e8e8" : "#888888"; }}
-        >
-          <span style={{ width: 14, fontSize: 11 }}>{item.checked ? "✓" : ""}</span>
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Screenplay Element Component ───
-function ScriptElement({ element, isActive, onClick, onChange, onKeyDown, sceneNumber, isDualColumn }) {
-  const ref = useRef(null);
-  const isEditingRef = useRef(false);
-
-  useEffect(() => {
-    if (isActive && ref.current) {
-      ref.current.focus();
-      const range = document.createRange();
-      const sel = window.getSelection();
-      if (ref.current.childNodes.length > 0) {
-        range.selectNodeContents(ref.current);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    }
-  }, [isActive]);
-
-  // Sync innerHTML from state on mount and when text changes externally
-  // (e.g. type change, auto-format) — skip during active user editing
-  useEffect(() => {
-    if (ref.current && !isEditingRef.current) {
-      ref.current.innerHTML = element.text;
-    }
-  }, [element.text, element.type]);
-
-  const handleInput = (e) => {
-    isEditingRef.current = true;
-    const html = e.currentTarget.innerHTML || "";
-    const hasFormatting = /<(b|i|u|strong|em)>/i.test(html);
-    onChange(element.id, hasFormatting ? html : (e.currentTarget.textContent || ""));
-    // Reset editing flag after React state update
-    requestAnimationFrame(() => { isEditingRef.current = false; });
-  };
-
-  const handleKeyDownLocal = (e) => {
-    // Bold / Italic / Underline
-    if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-      e.preventDefault();
-      document.execCommand("bold");
-      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === "i") {
-      e.preventDefault();
-      document.execCommand("italic");
-      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key === "u") {
-      e.preventDefault();
-      document.execCommand("underline");
-      ref.current?.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
-    }
-    onKeyDown(e, element);
-  };
-
-  const typeStyles = {
-    "scene-heading": "uppercase font-semibold tracking-wide text-left",
-    "action": "text-left",
-    "character": "uppercase font-semibold text-left",
-    "dialogue": "text-left",
-    "parenthetical": "italic text-left",
-    "transition": "uppercase text-right font-semibold",
-    "shot": "uppercase font-semibold text-left",
-    "centered": "text-center",
-  };
-
-  // Industry-standard screenplay margins (500px content area)
-  // Based on standard page: 8.5"x11", 1.5" left margin, 1.0" right margin = 6.0" print width
-  // Character at 3.7" from left edge = 2.2" indent = ~183px
-  // Dialogue: 2.5" to 6.0" from left edge = 1.0" to 1.5" indent = 83px / 125px
-  // Parenthetical: 3.1" to 5.6" = 1.6" to 1.9" indent = 133px / 158px
-  const fullMargins = {
-    "scene-heading": { marginLeft: 0, marginRight: 0, marginBottom: 4 },
-    "action":        { marginLeft: 0, marginRight: 0, marginBottom: 16 },
-    "character":     { marginLeft: 185, marginRight: 0, marginBottom: 2 },
-    "dialogue":      { marginLeft: 83, marginRight: 125, marginBottom: 16 },
-    "parenthetical": { marginLeft: 133, marginRight: 158, marginBottom: 2 },
-    "transition":    { marginLeft: 0, marginRight: 0, marginTop: 16, marginBottom: 16 },
-    "shot":          { marginLeft: 0, marginRight: 0, marginBottom: 4 },
-    "centered":      { marginLeft: 0, marginRight: 0, marginBottom: 16 },
-  };
-  const dualMargins = {
-    "character":     { marginLeft: 0, marginRight: 0, marginBottom: 2, textAlign: "center" },
-    "dialogue":      { marginLeft: 8, marginRight: 8, marginBottom: 8 },
-    "parenthetical": { marginLeft: 16, marginRight: 16, marginBottom: 2 },
-  };
-  const margins = isDualColumn ? { ...fullMargins, ...dualMargins } : fullMargins;
-
-  const placeholders = {
-    "scene-heading": "INT./EXT. LOCATION — TIME",
-    "action": "Describe what we see...",
-    "character": "CHARACTER NAME",
-    "dialogue": "Dialogue...",
-    "parenthetical": "(beat)",
-    "transition": "CUT TO:",
-    "shot": "ANGLE ON — SUBJECT",
-    "centered": "Centered text",
-  };
-
-  const style = margins[element.type] || {};
-
-  const editable = (
-    <div
-      ref={ref}
-      contentEditable
-      suppressContentEditableWarning
-      className={`outline-none cursor-text ${typeStyles[element.type] || ""} ${isActive ? "ring-1 ring-red-400/30 rounded px-1 -mx-1 bg-red-50/50" : ""}`}
-      style={{
-        ...style,
-        fontFamily: "'Courier Prime', 'Courier New', Courier, monospace",
-        fontSize: "12pt",
-        lineHeight: "1.85",
-        minHeight: "1.85em",
-        whiteSpace: "pre-wrap",
-        color: element.type === "parenthetical" ? "#666666" : undefined,
-      }}
-      onClick={() => onClick(element.id)}
-      onInput={handleInput}
-      onKeyDown={handleKeyDownLocal}
-      spellCheck
-      data-placeholder={placeholders[element.type] || ""}
-    />
-  );
-
-  if (element.type === "scene-heading" && sceneNumber != null) {
-    return (
-      <div style={{ position: "relative", ...margins[element.type] }}>
-        <span style={{
-          position: "absolute", left: -48, top: 0,
-          fontFamily: "'Courier Prime', 'Courier New', monospace",
-          fontSize: "12pt", lineHeight: "1.85", fontWeight: 600, color: "#111",
-        }}>{sceneNumber}</span>
-        <div
-          ref={ref}
-          contentEditable
-          suppressContentEditableWarning
-          className={`outline-none cursor-text ${typeStyles[element.type] || ""} ${isActive ? "ring-1 ring-red-400/30 rounded px-1 -mx-1 bg-red-50/50" : ""}`}
-          style={{
-            fontFamily: "'Courier Prime', 'Courier New', Courier, monospace",
-            fontSize: "12pt", lineHeight: "1.85", minHeight: "1.85em", whiteSpace: "pre-wrap",
-          }}
-          onClick={() => onClick(element.id)}
-          onInput={handleInput}
-          onKeyDown={handleKeyDownLocal}
-          spellCheck
-          data-placeholder={placeholders[element.type] || ""}
-        />
-        <span style={{
-          position: "absolute", right: -48, top: 0,
-          fontFamily: "'Courier Prime', 'Courier New', monospace",
-          fontSize: "12pt", lineHeight: "1.85", fontWeight: 600, color: "#111",
-        }}>{sceneNumber}</span>
-      </div>
-    );
-  }
-
-  return editable;
-}
-
-// ─── AI Message Component ───
-function AIMessage({ msg }) {
-  const isAI = msg.role === "assistant";
-
-  const formatText = (text) => {
-    return text.split("\n").map((line, i) => {
-      let formatted = line.replace(/\*([^*]+)\*/g, '<em style="color:#ffffff;font-style:normal;font-weight:500">$1</em>');
-      formatted = formatted.replace(/^• /, '<span style="color:#c43e3e">•</span> ');
-      return <p key={i} dangerouslySetInnerHTML={{ __html: formatted }} style={{ marginBottom: line === "" ? 8 : 2 }} />;
-    });
-  };
-
-  return (
-    <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
-      <div
-        className="flex-shrink-0 flex items-center justify-center rounded-full"
-        style={{
-          width: 28, height: 28,
-          background: isAI ? "rgba(196,62,62,0.2)" : "rgba(255,255,255,0.1)",
-          color: isAI ? "#c43e3e" : "#e8e8e8",
-          fontSize: 11, fontWeight: 600,
-          fontFamily: isAI ? "'Playfair Display', serif" : "inherit",
-          fontStyle: isAI ? "italic" : "normal",
-        }}
-      >
-        {isAI ? "S" : "Y"}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div style={{ fontSize: 10, color: "#555555", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          {isAI ? "ScriptMind" : "You"}
-        </div>
-        <div
-          style={{
-            fontSize: 12.5, lineHeight: 1.6,
-            background: isAI ? "#111111" : "rgba(255,255,255,0.06)",
-            border: `1px solid ${isAI ? "#222222" : "rgba(255,255,255,0.15)"}`,
-            borderRadius: 6, padding: "10px 12px", color: "#e8e8e8",
-          }}
-        >
-          {formatText(msg.text)}
-        </div>
-        {msg.streaming && (
-          <div style={{ marginTop: 4, fontSize: 11, color: "#c43e3e" }}>
-            <span className="inline-block" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>●</span> Thinking...
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Title Page Editor Modal ───
-function TitlePageEditor({ titlePage, onChange, onClose }) {
-  const [local, setLocal] = useState({ ...titlePage });
-  const handleClose = () => { onChange(local); onClose(); };
-  const fields = [
-    { key: "title", label: "Title" },
-    { key: "credit", label: "Credit" },
-    { key: "author", label: "Author" },
-    { key: "source", label: "Source Material" },
-    { key: "draftDate", label: "Draft Date" },
-    { key: "contact", label: "Contact Info" },
-  ];
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "none" }} onClick={handleClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 420, background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", animation: "fadeUp 0.2s ease" }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
-          <span style={{ fontSize: 14, fontWeight: 500, color: "#e8e8e8" }}>Title Page</span>
-          <button onClick={handleClose} style={{ background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
-        </div>
-        {fields.map(({ key, label }) => (
-          <div key={key} style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#555", marginBottom: 4 }}>{label}</label>
-            {key === "contact" ? (
-              <textarea
-                value={local[key]}
-                onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
-                rows={2}
-                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", resize: "none", outline: "none" }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
-                placeholder="Agent / Manager / Email"
-              />
-            ) : (
-              <input
-                value={local[key]}
-                onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
-                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", outline: "none", boxSizing: "border-box" }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
-                placeholder={label}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RenameCharacterModal({ oldName, onRename, onClose }) {
-  const [newName, setNewName] = useState("");
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "none" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#111111", border: "1px solid #222222", borderRadius: 10, padding: 24, width: 360, boxShadow: "0 16px 64px rgba(0,0,0,0.6)" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#e8e8e8", marginBottom: 16 }}>Rename Character</div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: "#555555", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>Current Name</label>
-          <input
-            value={oldName}
-            readOnly
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #222222", background: "#0a0a0a", color: "#888888", fontSize: 13, fontFamily: "'Courier Prime', monospace", boxSizing: "border-box" }}
-          />
-        </div>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 11, color: "#555555", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>New Name</label>
-          <input
-            autoFocus
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newName.trim()) onRename(oldName, newName);
-              if (e.key === "Escape") onClose();
-            }}
-            placeholder="Enter new name..."
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #333", background: "#0a0a0a", color: "#e8e8e8", fontSize: 13, fontFamily: "'Courier Prime', monospace", boxSizing: "border-box", outline: "none" }}
-          />
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            onClick={onClose}
-            style={{ padding: "6px 16px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
-          >Cancel</button>
-          <button
-            onClick={() => newName.trim() && onRename(oldName, newName)}
-            disabled={!newName.trim()}
-            style={{ padding: "6px 16px", borderRadius: 4, border: "none", background: newName.trim() ? "#c43e3e" : "#333", color: "#fff", fontSize: 12, cursor: newName.trim() ? "pointer" : "default", fontFamily: "inherit", fontWeight: 500 }}
-          >Rename</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── File Menu Dropdown ───
-function FileMenu({ onNew, onImport, onExportPDF, onExportFountain, onExportFDX, onTitlePage, isOpen, onToggle }) {
-  if (!isOpen) return null;
-  return (
-    <div
-      className="absolute z-50"
-      style={{
-        top: 42, left: 0,
-        background: "#111111", border: "1px solid #222222",
-        borderRadius: 6, padding: 4, minWidth: 180,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-      }}
-    >
-      {[
-        { label: "New Script", icon: "✦", action: onNew },
-        { label: "Title Page", icon: "◇", action: onTitlePage },
-        { label: "Import screenplay", icon: "↑", action: onImport },
-        { label: "─", divider: true },
-        { label: "Export as PDF", icon: "↓", action: onExportPDF },
-        { label: "Export as .fountain", icon: "↓", action: onExportFountain },
-        { label: "Export as .fdx", icon: "↓", action: onExportFDX },
-      ].map((item, i) =>
-        item.divider ? (
-          <div key={i} style={{ height: 1, background: "#222222", margin: "4px 0" }} />
-        ) : (
-          <button
-            key={i}
-            onClick={() => { item.action(); onToggle(); }}
-            className="w-full text-left flex items-center gap-2"
-            style={{
-              padding: "6px 10px", borderRadius: 4, border: "none",
-              background: "transparent", color: "#888888", fontSize: 12,
-              cursor: "pointer", fontFamily: "inherit",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#222222"; e.currentTarget.style.color = "#e8e8e8"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
-          >
-            <span style={{ width: 16, textAlign: "center", fontSize: 11 }}>{item.icon}</span>
-            {item.label}
-          </button>
-        )
-      )}
-    </div>
-  );
-}
-
 // ─── Main App ───
 export default function ScriptMind() {
   const [elements, setElements] = useState(() => {
@@ -855,9 +120,6 @@ export default function ScriptMind() {
       return els[0]?.id || "el-1";
     } catch { return "el-1"; }
   });
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
-  const [chatInput, setChatInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [lastSaved, setLastSaved] = useState("just now");
   const [scriptTitle, setScriptTitle] = useState(() => {
@@ -874,10 +136,22 @@ export default function ScriptMind() {
     } catch { return DEFAULT_TITLE_PAGE; }
   });
   const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
+  const [isThinkingMode, setIsThinkingMode] = useState(false);
+  const [aiPanelTab, setAiPanelTab] = useState("chat"); // "bible" | "explore" | "chat"
+  const [showScriptBible, setShowScriptBible] = useState(false);
+  const [scriptBible, setScriptBible] = useState(() => {
+    try {
+      const saved = localStorage.getItem("scriptmind_bible");
+      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT_BIBLE;
+    } catch { return DEFAULT_SCRIPT_BIBLE; }
+  });
+  const [scenarios, setScenarios] = useState([]);
+  const [anchoredScenario, setAnchoredScenario] = useState(null);
+  const [isExploring, setIsExploring] = useState(false);
+  const [toolbarSelection, setToolbarSelection] = useState(null); // { text, rect }
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
-  const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const editorScrollRef = useRef(null);
 
@@ -894,6 +168,17 @@ export default function ScriptMind() {
     return map;
   }, [elements]);
   const suggestions = useMemo(() => getSmartSuggestions(elements, activeElement), [elements, activeElement]);
+
+  const {
+    messages, setMessages,
+    chatInput, setChatInput,
+    isStreaming,
+    chatEndRef,
+    sendMessage,
+    handleRewriteScene,
+    handleSuggestNext,
+  } = useAIChat(elements, currentScene, activeElId);
+
   const contentRef = useRef(null);
   const [numPages, setNumPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -906,19 +191,12 @@ export default function ScriptMind() {
         localStorage.setItem("scriptmind_elements", JSON.stringify(elements));
         localStorage.setItem("scriptmind_title", scriptTitle);
         localStorage.setItem("scriptmind_titlepage", JSON.stringify(titlePage));
+        localStorage.setItem("scriptmind_bible", JSON.stringify(scriptBible));
         setLastSaved("just now");
       } catch { /* storage full — silent fail */ }
     }, 500); // debounce 500ms
     return () => clearTimeout(timeout);
-  }, [elements, scriptTitle, titlePage]);
-
-  // Measure content and calculate number of pages
-  useEffect(() => {
-    if (contentRef.current) {
-      const h = contentRef.current.scrollHeight;
-      setNumPages(Math.max(1, Math.ceil(h / PAGE_HEIGHT)));
-    }
-  }, [elements]);
+  }, [elements, scriptTitle, titlePage, scriptBible]);
 
   // Calculate which visual page the active element is on
   useEffect(() => {
@@ -930,36 +208,54 @@ export default function ScriptMind() {
     setCurrentPage(Math.min(page, numPages));
   }, [activeElId, numPages]);
 
-  // Push elements out of dead zones (footer/gap/header) at page boundaries
+  // Scroll active element into view when it's off-screen
   useEffect(() => {
-    if (!contentRef.current || numPages <= 1) return;
+    if (!activeElId || !editorScrollRef.current) return;
+    const dom = document.getElementById(`script-el-${activeElId}`);
+    if (!dom) return;
+    const rect = dom.getBoundingClientRect();
+    const container = editorScrollRef.current.getBoundingClientRect();
+    if (rect.bottom > container.bottom || rect.top < container.top) {
+      dom.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [activeElId]);
+
+  // Push elements out of dead zones and calculate page count
+  useEffect(() => {
+    if (!contentRef.current) return;
+    // Check if content needs more than one page
+    const measurePages = () => {
+      const totalH = contentRef.current.scrollHeight;
+      return Math.max(1, Math.ceil(totalH / (PAGE_HEIGHT + PAGE_GAP)));
+    };
+    if (numPages <= 1) {
+      const needed = measurePages();
+      if (needed !== numPages) setNumPages(needed);
+      return;
+    }
     // Clear previous adjustments
     elements.forEach(el => {
       const dom = document.getElementById(`script-el-${el.id}`);
       if (dom) dom.style.paddingTop = "";
     });
-    for (let p = 0; p < numPages - 1; p++) {
-      // Page p body ends here (content clipped after this)
-      const bodyEnd = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP - FOOTER_HEIGHT;
-      // Page p+1 body starts here (content visible again)
-      const nextBodyStart = (p + 1) * (PAGE_HEIGHT + PAGE_GAP) + HEADER_HEIGHT;
-      for (const el of elements) {
-        const dom = document.getElementById(`script-el-${el.id}`);
-        if (!dom) continue;
-        const top = dom.offsetTop;
-        const bottom = top + dom.offsetHeight;
-        if (top >= bodyEnd && top < nextBodyStart) {
-          // Element starts in dead zone — push down
-          dom.style.paddingTop = `${nextBodyStart - top}px`;
-          break;
-        }
-        if (top < bodyEnd && bottom > bodyEnd) {
-          // Element crosses into dead zone — push whole element to next page
+    // Iterate elements in document order; inner loop finds which boundary (if any) is crossed
+    for (const el of elements) {
+      const dom = document.getElementById(`script-el-${el.id}`);
+      if (!dom) continue;
+      const top = dom.offsetTop;
+      const bottom = top + dom.offsetHeight;
+      for (let p = 0; p < numPages - 1; p++) {
+        const bodyEnd = (p + 1) * PAGE_HEIGHT + p * PAGE_GAP - FOOTER_HEIGHT;
+        const nextBodyStart = (p + 1) * (PAGE_HEIGHT + PAGE_GAP) + HEADER_HEIGHT;
+        if ((top >= bodyEnd && top < nextBodyStart) || (top < bodyEnd && bottom > bodyEnd)) {
           dom.style.paddingTop = `${nextBodyStart - top}px`;
           break;
         }
       }
     }
+    // After dead-zone padding, recheck if content now needs more (or fewer) pages
+    const needed = measurePages();
+    if (needed !== numPages) setNumPages(needed);
   }, [elements, numPages]);
 
   // Compute (MORE)/(CONT'D) markers: detect dialogue crossing page boundaries
@@ -995,15 +291,122 @@ export default function ScriptMind() {
     setPageBreakMarkers(markers);
   }, [elements, numPages]);
 
-  // Scroll chat to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   // Notifications
   const showNotification = (text) => {
     setNotification(text);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Selection toolbar action handler
+  const handleSelectionAction = useCallback((actionType, selectedText) => {
+    setToolbarSelection(null);
+    setAiPanelTab("chat");
+
+    const trimmed = selectedText.trim();
+
+    const promptMap = {
+      alternatives: "Give me 2–3 alternative phrasings for this line or section.",
+      consistency: "Check this against the rest of the script for logical consistency and character voice.",
+      discuss: null,
+    };
+
+    const placeholderMap = {
+      alternatives: `Here are some alternatives for that line:\n\n**1.** "You never actually believed that, did you."\n**2.** "Say it again. I want to hear you say it like you mean it."\n**3.** "That's the first honest thing you've said all night."\n\nEach lands differently — the first is resigned, the second confrontational, the third gives Marcus the upper hand. Write whichever fits where you're taking him.`,
+      consistency: `A couple of things worth flagging:\n\n**Character voice:** This line feels slightly off for Marcus. Earlier in the script he tends to speak in short, clipped sentences when he's defensive — but this reads more expansive and explanatory. Could be intentional character development, but worth asking whether he'd really say it this way here.\n\n**Logic:** No continuity issues found with established facts in the script. The reference to the apartment checks out against Scene 3.`,
+      discuss: `Good pull. A few things this moment is doing:\n\nIt's carrying a lot of weight for a single exchange — the subtext here is doing more work than the dialogue. That's intentional and it's working, but it means if anything feels slightly off, the whole beat will feel unstable.\n\nWhat specifically do you want to talk through — the pacing, the character logic, or something about how it fits into the larger scene? I'll follow your lead.`,
+    };
+
+    const userMsg = {
+      id: uid(),
+      role: "user",
+      quote: trimmed,
+      text: promptMap[actionType],
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+
+    setTimeout(() => {
+      const aiMsg = {
+        id: uid(),
+        role: "assistant",
+        text: placeholderMap[actionType],
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    }, 400 + Math.random() * 200);
+  }, [setMessages]);
+
+  // Mouseup listener — detect selection within editor
+  useEffect(() => {
+    const handler = () => {
+      // Small delay to let selection finalize
+      setTimeout(() => {
+        if (!editorScrollRef.current) return;
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+          setToolbarSelection(null);
+          return;
+        }
+        try {
+          const range = sel.getRangeAt(0);
+          if (!editorScrollRef.current.contains(range.commonAncestorContainer)) {
+            setToolbarSelection(null);
+            return;
+          }
+          const rect = range.getBoundingClientRect();
+          setToolbarSelection({ text: sel.toString(), rect });
+        } catch {
+          setToolbarSelection(null);
+        }
+      }, 10);
+    };
+
+    const clearHandler = (e) => {
+      // Don't clear if clicking the toolbar itself
+      if (e.target.closest("[data-selection-toolbar]")) return;
+      // Clear if clicking outside the editor
+      if (editorScrollRef.current && !editorScrollRef.current.contains(e.target)) {
+        setToolbarSelection(null);
+      }
+    };
+
+    const escHandler = (e) => {
+      if (e.key === "Escape") {
+        setToolbarSelection(null);
+        setShowScriptBible(false);
+      }
+    };
+
+    document.addEventListener("mouseup", handler);
+    document.addEventListener("mousedown", clearHandler);
+    document.addEventListener("keydown", escHandler);
+    return () => {
+      document.removeEventListener("mouseup", handler);
+      document.removeEventListener("mousedown", clearHandler);
+      document.removeEventListener("keydown", escHandler);
+    };
+  }, []);
+
+  // Alternative Scene Analysis
+  const handleExplore = () => {
+    setIsExploring(true);
+    setTimeout(() => {
+      setScenarios(PLACEHOLDER_SCENARIOS.map(s => ({ ...s, impactOpen: false, previewOpen: false })));
+      if (isThinkingMode) setAiPanelTab("explore");
+      setIsExploring(false);
+    }, 600);
+  };
+
+  const handleDiscuss = (idx) => {
+    setAnchoredScenario(idx);
+    if (!isThinkingMode) setAiPanelTab("chat");
+  };
+
+  const toggleScenarioImpact = (idx) => {
+    setScenarios(prev => prev.map((s, i) => i === idx ? { ...s, impactOpen: !s.impactOpen } : s));
+  };
+
+  const toggleScenarioPreview = (idx) => {
+    setScenarios(prev => prev.map((s, i) => i === idx ? { ...s, previewOpen: !s.previewOpen } : s));
   };
 
   // Element operations
@@ -1206,9 +609,9 @@ export default function ScriptMind() {
     reader.onload = (ev) => {
       const text = ev.target.result;
       if (name.endsWith(".fdx")) {
-        setElements(parseFDX(text));
+        setElements(parseFDX(text, DEFAULT_SCRIPT.elements));
       } else {
-        setElements(parseFountain(text));
+        setElements(parseFountain(text, DEFAULT_SCRIPT.elements));
       }
       setScriptTitle(file.name.replace(/\.(fountain|fdx|txt)$/, ""));
       showNotification(`Imported ${file.name}`);
@@ -1277,287 +680,8 @@ export default function ScriptMind() {
   };
 
   const handleExportPDF = () => {
-    const doc = new jsPDF({ unit: "in", format: "letter" });
-    const PAGE_W = 8.5, PAGE_H = 11;
-    const ML = 1.5, MR = 1, MT = 1, MB = 1; // screenplay standard margins
-    const BODY_W = PAGE_W - ML - MR;
-    const FONT_SIZE = 12;
-    const LINE_H = FONT_SIZE * 1.6 / 72; // ~0.267in per line
-
-    const stripHtml = (html) => html.replace(/<[^>]*>/g, "");
-
-    // Element-specific left indents and max widths (in inches from left margin)
-    const elLayout = {
-      "scene-heading":  { indent: 0, width: BODY_W, upper: true, bold: true },
-      "action":         { indent: 0, width: BODY_W },
-      "character":      { indent: 2.2, width: BODY_W - 2.2, upper: true, bold: true },
-      "dialogue":       { indent: 1, width: 3.5 },
-      "parenthetical":  { indent: 1.6, width: 2.1 },
-      "transition":     { indent: 0, width: BODY_W, upper: true, align: "right" },
-      "shot":           { indent: 0, width: BODY_W, upper: true, bold: true },
-      "centered":       { indent: 0, width: BODY_W, align: "center" },
-    };
-
-    let pageNum = 0;
-    let y = MT;
-    let sceneNum = 0;
-
-    const newPage = () => {
-      if (pageNum > 0) doc.addPage();
-      pageNum++;
-      y = MT;
-    };
-
-    const checkPageBreak = (needed) => {
-      if (y + needed > PAGE_H - MB) {
-        // Page number footer
-        doc.setFont("Courier", "normal");
-        doc.setFontSize(10);
-        doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
-        newPage();
-      }
-    };
-
-    const writeLines = (text, layout) => {
-      doc.setFont("Courier", layout.bold ? "bold" : "normal");
-      doc.setFontSize(FONT_SIZE);
-      let str = stripHtml(text);
-      if (layout.upper) str = str.toUpperCase();
-      const maxW = layout.width;
-      const lines = doc.splitTextToSize(str, maxW);
-      for (const line of lines) {
-        checkPageBreak(LINE_H);
-        const xBase = ML + layout.indent;
-        if (layout.align === "right") {
-          doc.text(line, ML + BODY_W, y, { align: "right" });
-        } else if (layout.align === "center") {
-          doc.text(line, ML + BODY_W / 2, y, { align: "center" });
-        } else {
-          doc.text(line, xBase, y);
-        }
-        y += LINE_H;
-      }
-    };
-
-    // ── Title Page ──
-    newPage();
-    const tp = titlePage;
-    doc.setFont("Courier", "bold");
-    doc.setFontSize(24);
-    const titleText = tp.title || scriptTitle;
-    doc.text(titleText, PAGE_W / 2, 4, { align: "center" });
-    doc.setFontSize(FONT_SIZE);
-    doc.setFont("Courier", "normal");
-    let titleY = 4.5;
-    if (tp.credit) { doc.text(tp.credit, PAGE_W / 2, titleY, { align: "center" }); titleY += 0.3; }
-    if (tp.author) { doc.setFont("Courier", "bold"); doc.text(tp.author, PAGE_W / 2, titleY, { align: "center" }); doc.setFont("Courier", "normal"); titleY += 0.3; }
-    if (tp.source) { doc.text(`Based on ${tp.source}`, PAGE_W / 2, titleY, { align: "center" }); }
-    // Bottom-right contact block
-    let contactY = PAGE_H - 2;
-    doc.setFontSize(10);
-    if (tp.draftDate) { doc.text(tp.draftDate, PAGE_W - MR - 1, contactY); contactY += 0.25; }
-    if (tp.contact) {
-      const contactLines = tp.contact.split("\n");
-      for (const cl of contactLines) { doc.text(cl, PAGE_W - MR - 1, contactY); contactY += 0.25; }
-    }
-
-    // ── Screenplay Content ──
-    newPage();
-    const SPACING_AFTER = {
-      "scene-heading": LINE_H,
-      "action": LINE_H,
-      "character": 0,
-      "dialogue": LINE_H,
-      "parenthetical": 0,
-      "transition": LINE_H,
-      "shot": LINE_H,
-      "centered": LINE_H,
-    };
-
-    // Collect dialogue group indices starting from a character element
-    const collectPdfGroup = (startIdx) => {
-      const group = [startIdx];
-      for (let j = startIdx + 1; j < elements.length; j++) {
-        if (elements[j].type === "dialogue" || elements[j].type === "parenthetical") group.push(j);
-        else break;
-      }
-      return group;
-    };
-
-    // Measure how many lines a group would take
-    const measureGroup = (indices) => {
-      let lines = 0;
-      for (const idx of indices) {
-        const el = elements[idx];
-        const layout = elLayout[el.type] || elLayout["action"];
-        let str = stripHtml(el.text);
-        if (layout.upper) str = str.toUpperCase();
-        doc.setFont("Courier", layout.bold ? "bold" : "normal");
-        doc.setFontSize(FONT_SIZE);
-        lines += doc.splitTextToSize(str, layout.width).length;
-      }
-      return lines;
-    };
-
-    // Write lines at a specific x offset with a given max width (for dual dialogue columns)
-    const writeLinesAt = (text, layout, xOffset, maxW) => {
-      doc.setFont("Courier", layout.bold ? "bold" : "normal");
-      doc.setFontSize(FONT_SIZE);
-      let str = stripHtml(text);
-      if (layout.upper) str = str.toUpperCase();
-      const lines = doc.splitTextToSize(str, maxW);
-      for (const line of lines) {
-        checkPageBreak(LINE_H);
-        doc.text(line, xOffset, y);
-        y += LINE_H;
-      }
-    };
-
-    let ei = 0;
-    while (ei < elements.length) {
-      const el = elements[ei];
-
-      // Detect dual dialogue pair
-      if (el.type === "character" && !el.dual) {
-        const leftGroup = collectPdfGroup(ei);
-        const nextIdx = leftGroup[leftGroup.length - 1] + 1;
-        if (nextIdx < elements.length && elements[nextIdx].type === "character" && elements[nextIdx].dual) {
-          const rightGroup = collectPdfGroup(nextIdx);
-          const HALF = BODY_W / 2 - 0.1;
-          const leftLines = measureGroup(leftGroup);
-          const rightLines = measureGroup(rightGroup);
-          const totalLines = Math.max(leftLines, rightLines);
-          checkPageBreak(totalLines * LINE_H);
-          const startY = y;
-          // Left column
-          for (const idx of leftGroup) {
-            const ge = elements[idx];
-            const gl = ge.type === "character"
-              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
-              : ge.type === "parenthetical"
-              ? { indent: 0.3, width: HALF - 0.6 }
-              : { indent: 0, width: HALF };
-            writeLinesAt(ge.text, gl, ML + gl.indent, gl.width);
-          }
-          const leftEndY = y;
-          // Right column
-          y = startY;
-          for (const idx of rightGroup) {
-            const ge = elements[idx];
-            const gl = ge.type === "character"
-              ? { indent: 0.5, width: HALF - 0.5, upper: true, bold: true }
-              : ge.type === "parenthetical"
-              ? { indent: 0.3, width: HALF - 0.6 }
-              : { indent: 0, width: HALF };
-            writeLinesAt(ge.text, gl, ML + HALF + 0.2 + gl.indent, gl.width);
-          }
-          y = Math.max(leftEndY, y) + LINE_H;
-          ei = rightGroup[rightGroup.length - 1] + 1;
-          continue;
-        }
-      }
-
-      const layout = elLayout[el.type] || elLayout["action"];
-      if (el.type === "scene-heading") {
-        sceneNum++;
-        if (y > MT + LINE_H) y += LINE_H;
-        checkPageBreak(LINE_H * 2);
-        doc.setFont("Courier", "bold");
-        doc.setFontSize(FONT_SIZE);
-        doc.text(`${sceneNum}`, ML - 0.5, y, { align: "right" });
-        doc.text(`${sceneNum}`, ML + BODY_W + 0.15, y);
-      }
-      writeLines(el.text, layout);
-      y += SPACING_AFTER[el.type] ?? LINE_H;
-      ei++;
-    }
-
-    // Final page number
-    doc.setFont("Courier", "normal");
-    doc.setFontSize(10);
-    doc.text(`${pageNum}.`, PAGE_W - MR, PAGE_H - 0.5, { align: "right" });
-
-    doc.save(`${scriptTitle}.pdf`);
+    exportPDF(elements, titlePage, scriptTitle);
     showNotification("Exported PDF");
-  };
-
-  // AI Chat
-  const sendMessage = async (text) => {
-    if (!text.trim() || isStreaming) return;
-
-    const userMsg = { id: msgId(), role: "user", text: text.trim() };
-    setMessages((prev) => [...prev, userMsg]);
-    setChatInput("");
-    setIsStreaming(true);
-
-    // Build script context
-    const scriptText = elements.map((el) => {
-      const prefix = el.type === "scene-heading" ? "\n" : el.type === "character" ? "\n" : "";
-      return prefix + stripHtml(el.text);
-    }).join("\n");
-
-    const currentSceneText = `Scene ${currentScene}`;
-
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are ScriptMind, an expert AI screenwriting collaborator. You have access to the writer's full screenplay and are helping them craft their story. Be specific to THEIR script — reference their characters, scenes, and dialogue by name. Be concise, insightful, and practical. Use a warm but professional tone. Format with bullet points (•) sparingly. Use *asterisks* for emphasis on key terms.
-
-CURRENT SCREENPLAY:
-${scriptText}
-
-CURRENT POSITION: ${currentSceneText}
-
-Respond concisely (2-4 short paragraphs max). Be specific to this screenplay — mention character names, scene details, etc.`,
-          messages: [
-            ...messages.filter(m => m.role).map(m => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.text
-            })),
-            { role: "user", content: text.trim() }
-          ],
-        }),
-      });
-
-      const data = await response.json();
-      const aiText = data.content?.map(b => b.text || "").join("") || "I'd be happy to help with your screenplay. Could you tell me more about what you're working on?";
-
-      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", text: aiText }]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: msgId(),
-          role: "assistant",
-          text: "I'm having trouble connecting right now. In the meantime, I can see you're working on a compelling scene between Morgan and Cole. The tension in their dialogue is strong — Morgan's short responses are doing a lot of heavy lifting. What specifically would you like help with?",
-        },
-      ]);
-    }
-    setIsStreaming(false);
-  };
-
-  const handleRewriteScene = () => {
-    const sceneEls = [];
-    let inCurrentScene = false;
-    for (const el of elements) {
-      if (el.type === "scene-heading") {
-        if (inCurrentScene) break;
-        if (el.id === activeElId || getCurrentSceneIndex(elements, el.id) === currentScene) {
-          inCurrentScene = true;
-        }
-      }
-      if (inCurrentScene) sceneEls.push(el);
-    }
-    const sceneText = sceneEls.map((e) => stripHtml(e.text)).join("\n");
-    sendMessage(`Please rewrite the current scene (Scene ${currentScene}) to be tighter and more impactful. Here's what I have:\n\n${sceneText}`);
-  };
-
-  const handleSuggestNext = () => {
-    sendMessage("Based on where my cursor is in the script, suggest what should come next. What's the next line or beat that would work well here?");
   };
 
   // Click outside to close file menu
@@ -1572,7 +696,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
   return (
     <div
       className="flex flex-col h-screen w-full overflow-hidden"
-      style={{ background: "#080808", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
+      style={{ background: "#f5f5f5", color: "#1a1a1a", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -1588,12 +712,12 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
         @keyframes rotateSpark { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } 50% { box-shadow: 0 0 8px #c43e3e, 0 0 16px rgba(196,62,62,0.6); } 100% { box-shadow: 0 0 4px #c43e3e, 0 0 8px rgba(196,62,62,0.4); } }
+        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #4ade80, 0 0 8px rgba(74,222,128,0.3); } 50% { box-shadow: 0 0 8px #4ade80, 0 0 16px rgba(74,222,128,0.5); } 100% { box-shadow: 0 0 4px #4ade80, 0 0 8px rgba(74,222,128,0.3); } }
         [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #222222; border-radius: 3px; }
-        ::selection { background: rgba(196,62,62,0.25); }
+        ::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 3px; }
+        ::selection { background: rgba(0,0,0,0.1); }
       `}</style>
 
       {/* Title Page Editor Modal */}
@@ -1635,17 +759,54 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
 
       {/* Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-          <span style={{ color: "#c43e3e", marginRight: 6 }}>✓</span> {notification}
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#1a1a1a", boxShadow: "0 4px 16px rgba(0,0,0,0.1)" }}>
+          <span style={{ color: "#4ade80", marginRight: 6 }}>✓</span> {notification}
         </div>
+      )}
+
+      {/* Selection Toolbar */}
+      <SelectionToolbar selection={toolbarSelection} onAction={handleSelectionAction} />
+
+      {/* Script Bible slide-over (Writing Mode) */}
+      {showScriptBible && !isThinkingMode && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowScriptBible(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.15)" }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: "fixed", top: 48, left: 220, bottom: 24,
+            width: 560, zIndex: 91,
+            background: "#ffffff", borderRight: "1px solid #e0e0e0",
+            boxShadow: "4px 0 24px rgba(0,0,0,0.1)",
+            display: "flex", flexDirection: "column",
+            animation: "slideInLeft 0.2s ease",
+          }}>
+            <style>{`@keyframes slideInLeft { from { opacity:0; transform:translateX(-12px); } to { opacity:1; transform:translateX(0); } }`}</style>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid #e0e0e0", flexShrink: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#1a1a1a" }}>Script Bible</div>
+              <button
+                onClick={() => setShowScriptBible(false)}
+                style={{ background: "none", border: "none", color: "#aaaaaa", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#666666"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "#aaaaaa"; }}
+              >×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <ScriptBible bible={scriptBible} onChange={setScriptBible} mode="writing" />
+            </div>
+          </div>
+        </>
       )}
 
       {/* Drag & drop overlay */}
       {isDragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
           <div className="flex flex-col items-center gap-4" style={{ animation: "fadeUp 0.2s ease" }}>
-            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #c43e3e", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#c43e3e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #444444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
@@ -1671,20 +832,40 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       />
 
       {/* ── TOP BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderBottom: "1px solid #222222", padding: "0 16px", gap: 16 }}>
+      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "#f0f0f0", borderBottom: "1px solid #e0e0e0", padding: "0 16px", gap: 16 }}>
         <div style={{
           fontFamily: "'Playfair Display', serif", fontSize: 17, letterSpacing: "0.02em",
-          backgroundImage: "linear-gradient(90deg, #ffffff, #c43e3e, #ffffff, #c43e3e)",
-          backgroundSize: "200% auto",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-          animation: "shimmer 4s linear infinite",
+          color: "#1a1a1a",
         }}>
           Script<span style={{ fontStyle: "italic" }}>Mind</span>
         </div>
-        <div style={{ width: 1, height: 20, background: "#222222" }} />
+        <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#888888" }}>
           {scriptTitle}.fdx
+        </div>
+
+        {/* Mode toggle — centered */}
+        <div className="flex items-center" style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", gap: 2 }}>
+          {["Writing Mode", "Thinking Mode"].map((label) => {
+            const active = label === "Writing Mode" ? !isThinkingMode : isThinkingMode;
+            return (
+              <button
+                key={label}
+                onClick={() => setIsThinkingMode(label === "Thinking Mode")}
+                style={{
+                  fontSize: 11.5, padding: "4px 14px", borderRadius: 4,
+                  fontFamily: "inherit", cursor: "pointer",
+                  background: active ? "rgba(0,0,0,0.07)" : "transparent",
+                  border: active ? "1px solid #cccccc" : "1px solid transparent",
+                  color: active ? "#1a1a1a" : "#aaaaaa",
+                  fontWeight: active ? 500 : 400,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
@@ -1692,7 +873,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
             <button
               onClick={() => setFileMenuOpen(!fileMenuOpen)}
               className="flex items-center gap-1"
-              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
+              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #d8d8d8", background: "transparent", color: "#666666", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
             >
               <FileIcon /> File <ChevronIcon />
             </button>
@@ -1709,7 +890,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           </div>
           <button
             onClick={handleExportPDF}
-            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #d8d8d8", background: "transparent", color: "#666666", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
           >
             <DownloadIcon /> Export PDF
           </button>
@@ -1720,79 +901,139 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
       <div className="flex flex-1 overflow-hidden">
 
         {/* LEFT SIDEBAR */}
-        <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderRight: "1px solid #222222" }}>
-          <div style={{ padding: "12px 14px 8px" }}>
-            <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "#555555", marginBottom: 8 }}>
-              Scenes
-            </div>
-            <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+        <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{
+          width: isThinkingMode ? 40 : 220,
+          background: "#ebebeb",
+          borderRight: "1px solid #e0e0e0",
+          transition: "width 0.35s ease",
+        }}>
+          {isThinkingMode ? (
+            /* Slim strip — scene number circles only */
+            <div className="flex flex-col items-center" style={{ paddingTop: 12, gap: 6, overflowY: "auto", flex: 1 }}>
               {scenes.map((scene, i) => {
-                const isActive = scene.id === activeElId || getCurrentSceneIndex(elements, activeElId) === i + 1;
-                const color = isActive ? "#c43e3e" : "#555555";
+                const isActive = getCurrentSceneIndex(elements, activeElId) === i + 1;
                 return (
                   <div
                     key={scene.id}
                     onClick={() => jumpToScene(scene.id)}
-                    className="flex items-center gap-2 cursor-pointer"
+                    title={stripHtml(scene.text) || "UNTITLED SCENE"}
                     style={{
-                      padding: "7px 10px", borderRadius: 4,
-                      background: isActive ? "rgba(196,62,62,0.15)" : "transparent",
-                      borderLeft: isActive ? `2px solid ${color}` : "2px solid transparent",
-                      boxShadow: isActive ? `inset 3px 0 8px -4px ${color}` : "none",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#111111"; }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <span style={{
-                      fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, minWidth: 18, height: 18,
+                      width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      borderRadius: "50%", backgroundColor: isActive ? "rgba(196,62,62,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
-                    }}>{i + 1}</span>
-                    <span style={{ fontSize: 12, color: isActive ? "#e8e8e8" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {stripHtml(scene.text) || "UNTITLED SCENE"}
-                    </span>
+                      backgroundColor: isActive ? "rgba(74,222,128,0.15)" : "rgba(0,0,0,0.07)",
+                      color: isActive ? "#4ade80" : "#aaaaaa",
+                      fontSize: 9, fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+                      border: isActive ? "1px solid rgba(74,222,128,0.4)" : "1px solid transparent",
+                      transition: "all 0.2s",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {i + 1}
                   </div>
                 );
               })}
             </div>
-          </div>
-
-          {/* New Scene button */}
-          <div style={{ padding: "4px 14px" }}>
-            <button
-              onClick={() => {
-                const lastId = elements[elements.length - 1].id;
-                insertElementAfter(lastId, "scene-heading", "");
-              }}
-              className="flex items-center gap-1.5 w-full"
-              style={{ fontSize: 11, color: "#555555", background: "transparent", border: "1px dashed #222222", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#888888"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#555555"; e.currentTarget.style.borderColor = "#222222"; }}
-            >
-              <PlusIcon /> Add Scene
-            </button>
-          </div>
-
-          <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #222222" }}>
-            {[
-              ["Pages", `${numPages} / 110`],
-              ["Words", wordCount.toLocaleString()],
-              ["Scenes", scenes.length],
-              ["Last saved", lastSaved],
-            ].map(([label, value]) => (
-              <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "#555555", marginBottom: 2 }}>
-                <span>{label}</span>
-                <span style={{ color: "#888888" }}>{value}</span>
+          ) : (
+            <>
+              <div style={{ padding: "12px 14px 8px" }}>
+                <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "#aaaaaa", marginBottom: 8 }}>
+                  Scenes
+                </div>
+                <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
+                  {scenes.map((scene, i) => {
+                    const isActive = scene.id === activeElId || getCurrentSceneIndex(elements, activeElId) === i + 1;
+                    const color = isActive ? "#4ade80" : "#555555";
+                    return (
+                      <div
+                        key={scene.id}
+                        onClick={() => jumpToScene(scene.id)}
+                        className="flex items-center gap-2 cursor-pointer"
+                        style={{
+                          padding: "7px 10px", borderRadius: 4,
+                          background: isActive ? "rgba(74,222,128,0.06)" : "transparent",
+                          borderLeft: isActive ? `2px solid ${color}` : "2px solid transparent",
+                          boxShadow: isActive ? `inset 3px 0 8px -4px rgba(74,222,128,0.3)` : "none",
+                          transition: "all 0.2s",
+                        }}
+                        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#eeeeee"; }}
+                        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <span style={{
+                          fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, minWidth: 18, height: 18,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          borderRadius: "50%", backgroundColor: isActive ? "rgba(74,222,128,0.1)" : "rgba(0,0,0,0.07)", color: color, fontWeight: 600,
+                        }}>{i + 1}</span>
+                        <span style={{ fontSize: 12, color: isActive ? "#1a1a1a" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {stripHtml(scene.text) || "UNTITLED SCENE"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            ))}
-          </div>
+
+              {/* New Scene button */}
+              <div style={{ padding: "4px 14px" }}>
+                <button
+                  onClick={() => {
+                    const lastId = elements[elements.length - 1].id;
+                    insertElementAfter(lastId, "scene-heading", "");
+                  }}
+                  className="flex items-center gap-1.5 w-full"
+                  style={{ fontSize: 11, color: "#aaaaaa", background: "transparent", border: "1px dashed #cccccc", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#666666"; e.currentTarget.style.borderColor = "#999999"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#aaaaaa"; e.currentTarget.style.borderColor = "#cccccc"; }}
+                >
+                  <PlusIcon /> Add Scene
+                </button>
+              </div>
+
+              <div className="mt-auto" style={{ borderTop: "1px solid #e0e0e0" }}>
+                {/* Script Bible button */}
+                <div style={{ padding: "8px 12px", borderBottom: "1px solid #e0e0e0" }}>
+                  <button
+                    onClick={() => setShowScriptBible(true)}
+                    style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 6,
+                      fontSize: 11, color: "#aaaaaa", background: "transparent",
+                      border: "1px solid #e0e0e0", borderRadius: 4, padding: "5px 8px",
+                      cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#4ade80"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.4)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "#aaaaaa"; e.currentTarget.style.borderColor = "#e0e0e0"; }}
+                  >
+                    <span style={{ fontSize: 13 }}>☰</span> Script Bible
+                  </button>
+                </div>
+                <div style={{ padding: 12 }}>
+                  {[
+                    ["Pages", `${numPages} / 110`],
+                    ["Words", wordCount.toLocaleString()],
+                    ["Scenes", scenes.length],
+                    ["Last saved", lastSaved],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "#aaaaaa", marginBottom: 2 }}>
+                      <span>{label}</span>
+                      <span style={{ color: "#666666" }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── SCREENPLAY EDITOR ── */}
-        <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#0d0d0d" }}>
+        <div className="flex flex-col overflow-hidden" style={{
+          background: "#f0f0f0",
+          flex: isThinkingMode ? "0 0 0px" : "1 1 0",
+          opacity: isThinkingMode ? 0 : 1,
+          pointerEvents: isThinkingMode ? "none" : "auto",
+          transition: "flex 0.35s ease, opacity 0.25s ease",
+          minWidth: 0,
+        }}>
           {/* Toolbar */}
-          <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#0a0a0a", borderBottom: "1px solid #222222", padding: "0 16px", gap: 4 }}>
+          <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#ffffff", borderBottom: "1px solid #e0e0e0", padding: "0 16px", gap: 4 }}>
             {ELEMENT_TYPES.map((type) => {
               const activeEl = elements.find((e) => e.id === activeElId);
               const isActive = activeEl?.type === type;
@@ -1803,9 +1044,9 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   onClick={() => { if (activeElId) changeElementType(activeElId, type); }}
                   style={{
                     fontSize: 11, padding: "3px 9px", borderRadius: 3,
-                    background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
-                    border: isActive ? "1px solid rgba(255,255,255,0.25)" : "1px solid transparent",
-                    color: isActive ? "#e8e8e8" : "#888888",
+                    background: isActive ? "rgba(74,222,128,0.06)" : "transparent",
+                    border: isActive ? "1px solid #4ade80" : "1px solid transparent",
+                    color: isActive ? "#1a1a1a" : "#888888",
                     cursor: "pointer",
                     fontFamily: "'IBM Plex Mono', monospace",
                     transition: "all 0.1s",
@@ -1816,7 +1057,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               );
             })}
             {/* Formatting separator + B/I/U buttons */}
-            <div style={{ width: 1, height: 18, background: "#222222", margin: "0 4px" }} />
+            <div style={{ width: 1, height: 18, background: "#e0e0e0", margin: "0 4px" }} />
             {[
               { label: "B", cmd: "bold", style: { fontWeight: 700 } },
               { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
@@ -1828,37 +1069,37 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 style={{
                   fontSize: 12, padding: "3px 7px", borderRadius: 3,
                   background: "transparent", border: "1px solid transparent",
-                  color: "#888888", cursor: "pointer",
+                  color: "#666666", cursor: "pointer",
                   fontFamily: "'Courier Prime', 'Courier New', monospace",
                   transition: "all 0.1s", ...fmt.style,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#e8e8e8"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "#1a1a1a"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#666666"; }}
                 title={`${fmt.cmd.charAt(0).toUpperCase() + fmt.cmd.slice(1)} (⌘${fmt.label})`}
               >
                 {fmt.label}
               </button>
             ))}
-            <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#555555" }}>
+            <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#aaaaaa" }}>
               Page {currentPage} of {numPages} · Scene {currentScene}
             </div>
           </div>
 
           {/* Editor — continuous flow with page gaps */}
-          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #120a0a 0%, #0d0d0d 60%)" }}>
+          <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #d0d0d0 0%, #dadada 60%)" }}>
             {/* Visual Title Page */}
             <div
               onClick={() => setShowTitlePageEditor(true)}
               style={{
                 width: 680, height: PAGE_HEIGHT, marginBottom: PAGE_GAP, borderRadius: 2, cursor: "pointer",
                 background: "#ffffff", position: "relative", flexShrink: 0,
-                boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
                 display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
                 fontFamily: "'Courier Prime', 'Courier New', monospace", color: "#111",
                 transition: "box-shadow 0.2s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.3)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 6px 32px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.06)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)"; }}
             >
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "24pt", fontWeight: "bold", marginBottom: 8 }}>{titlePage.title || "Untitled"}</div>
@@ -1875,7 +1116,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
               <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#aaa", opacity: 0.6 }}>Click to edit</div>
             </div>
 
-            <div style={{ position: "relative", width: 680, flexShrink: 0 }}>
+            <div style={{ position: "relative", width: 680, flexShrink: 0, minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP }}>
               {/* SVG clipPath — clips content to body area only (excludes header/footer margins) */}
               <svg width="0" height="0" style={{ position: "absolute" }}>
                 <defs>
@@ -1899,7 +1140,7 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                   left: 0, width: 680, height: PAGE_HEIGHT,
                   borderRadius: 2,
                   background: "#ffffff",
-                  boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(196,62,62,0.15), 0 0 120px rgba(196,62,62,0.05)",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
                   pointerEvents: "none",
                 }} />
               ))}
@@ -1908,11 +1149,10 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                 ref={contentRef}
                 style={{
                   width: 680,
-                  minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP,
                   background: "#ffffff",
                   borderRadius: 2,
                   padding: "72px 72px 72px 108px",
-                  color: "#111111",
+                  color: "#1a1a1a",
                   position: "relative",
                   clipPath: "url(#page-clip)",
                 }}
@@ -1949,8 +1189,8 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                       {el.id === activeElId && suggestions.length > 0 && (
                         <div style={{
                           position: "absolute", left: 0, top: "100%", zIndex: 20,
-                          background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
-                          boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
+                          background: "#ffffff", border: "1px solid #d8d8d8", borderRadius: 4,
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.1)", minWidth: 220, maxWidth: 400,
                           overflow: "hidden", marginTop: 2,
                         }}>
                           {suggestions.map((s, si) => (
@@ -1961,15 +1201,15 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
                               style={{
                                 padding: "6px 12px", fontSize: 12, cursor: "pointer",
                                 fontFamily: "'Courier Prime', 'Courier New', monospace",
-                                background: si === acIndex ? "rgba(196,62,62,0.25)" : "transparent",
-                                color: si === acIndex ? "#e8e8e8" : "#aaa",
-                                borderLeft: si === acIndex ? "2px solid #c43e3e" : "2px solid transparent",
+                                background: si === acIndex ? "rgba(0,0,0,0.05)" : "transparent",
+                                color: si === acIndex ? "#1a1a1a" : "#888888",
+                                borderLeft: si === acIndex ? "2px solid #4ade80" : "2px solid transparent",
                               }}
                             >
                               {s}
                             </div>
                           ))}
-                          <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #222" }}>
+                          <div style={{ padding: "4px 12px", fontSize: 10, color: "#aaaaaa", borderTop: "1px solid #e8e8e8" }}>
                             ↑↓ navigate · Tab/Enter accept · Esc dismiss
                           </div>
                         </div>
@@ -2057,132 +1297,237 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
         </div>
 
         {/* ── AI PANEL ── */}
-        <div className="flex flex-col flex-shrink-0" style={{ width: 360, background: "linear-gradient(180deg, #0a0a0a, #0e0e0e, #0a0a0a)", borderLeft: "1px solid #222222" }}>
-          {/* Header */}
-          <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid #222222", padding: "0 16px", gap: 10 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #d45555, #c43e3e)", animation: "ringPulse 2s ease-in-out infinite" }} />
-            <div style={{
-              fontSize: 13, fontWeight: 500,
-              backgroundImage: "linear-gradient(90deg, #e8e8e8, #c43e3e, #e8e8e8, #c43e3e)",
-              backgroundSize: "200% auto",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              animation: "shimmer 6s linear infinite",
-            }}>AI Collaborator</div>
-            <div className="ml-auto" style={{ fontSize: 11, padding: "3px 10px", borderRadius: 3, background: "rgba(255,255,255,0.1)", color: "#e8e8e8" }}>
-              Chat
+        <div className="flex flex-col flex-shrink-0" style={{
+          width: isThinkingMode ? "100%" : 360,
+          background: "#f8f8f8",
+          borderLeft: "1px solid #e0e0e0",
+          transition: "width 0.35s ease",
+          minWidth: 0,
+          overflow: "hidden",
+        }}>
+          {/* Header — title + tabs */}
+          <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid #e0e0e0", padding: "0 16px", gap: 10, flexShrink: 0 }}>
+            {!isThinkingMode && <>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #86efac, #4ade80)", animation: "ringPulse 2s ease-in-out infinite", flexShrink: 0 }} />
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#1a1a1a" }}>AI Collaborator</div>
+            </>}
+            <div className="flex items-center gap-1" style={{ marginLeft: isThinkingMode ? 0 : "auto" }}>
+              {(isThinkingMode ? ["bible", "explore", "chat"] : ["chat"]).map((tab) => {
+                const isActive = aiPanelTab === tab;
+                const tabLabels = { bible: "Script Bible", explore: "Explore", chat: "Chat" };
+                const activeColor = tab === "explore" ? "#4ade80" : tab === "bible" ? "#4ade80" : "#444444";
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setAiPanelTab(tab)}
+                    style={{
+                      fontSize: 11, padding: "3px 10px", borderRadius: 3,
+                      background: isActive ? "rgba(0,0,0,0.07)" : "transparent",
+                      border: "1px solid transparent",
+                      color: isActive ? activeColor : "#aaaaaa",
+                      fontWeight: isActive ? 500 : 400,
+                      cursor: "pointer", fontFamily: "inherit",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {tabLabels[tab]}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
-            {/* Context card */}
-            <div style={{ background: "rgba(196,62,62,0.08)", border: "1px solid rgba(196,62,62,0.2)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#888888", lineHeight: 1.5 }}>
-              <strong style={{ color: "#c43e3e", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
-                📍 Current Scene Context
-              </strong>
-              Scene {currentScene} · {stripHtml(scenes[currentScene - 1]?.text || "Start writing")} · {
-                (() => {
-                  const chars = [];
-                  let inScene = false;
-                  for (const el of elements) {
-                    if (el.type === "scene-heading") {
-                      if (inScene) break;
-                      if (getCurrentSceneIndex(elements, el.id) === currentScene) inScene = true;
-                    }
-                    if (inScene && el.type === "character" && !chars.includes(stripHtml(el.text))) chars.push(stripHtml(el.text));
-                  }
-                  return chars.length > 0 ? chars.join(" + ") : "No characters yet";
-                })()
-              }
-            </div>
+          {/* ── THINKING MODE: cards on top, chat always below ── */}
+          {isThinkingMode ? (
+            <div className="flex flex-col flex-1 overflow-hidden">
 
-            {messages.map((msg) => (
-              <AIMessage key={msg.id} msg={msg} />
-            ))}
-
-            {isStreaming && (
-              <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
-                <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(196,62,62,0.2)", color: "#c43e3e", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
-                <div className="flex-1">
-                  <div style={{ fontSize: 10, color: "#555555", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>ScriptMind</div>
-                  <div style={{ fontSize: 12.5, background: "#111111", border: "1px solid #222222", borderRadius: 6, padding: "10px 12px", color: "#c43e3e" }}>
-                    <span style={{ animation: "pulse 1s ease-in-out infinite" }}>●</span>
-                    <span style={{ animation: "pulse 1s ease-in-out infinite 0.2s" }}> ●</span>
-                    <span style={{ animation: "pulse 1s ease-in-out infinite 0.4s" }}> ●</span>
-                  </div>
+              {/* Script Bible tab — full panel */}
+              {aiPanelTab === "bible" && (
+                <div className="flex-1 overflow-y-auto">
+                  <ScriptBible bible={scriptBible} onChange={setScriptBible} mode="thinking" />
                 </div>
-              </div>
-            )}
+              )}
 
-            <div ref={chatEndRef} />
-          </div>
+              {/* Cards — only when Explore tab active */}
+              {aiPanelTab === "explore" && (
+                <div style={{ padding: 16, borderBottom: "1px solid #e0e0e0", flexShrink: 0, overflowX: "auto" }}>
+                  {scenarios.length === 0 ? (
+                    <div style={{ textAlign: "center", color: "#aaaaaa", fontSize: 12, padding: "20px 0" }}>
+                      Click "✦ Alternative Scene Analysis" to explore directions for this scene.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(280px, 1fr))", gap: 12 }}>
+                      {scenarios.map((s, i) => (
+                        <ScenarioCard
+                          key={i} scenario={s} index={i}
+                          onDiscuss={() => handleDiscuss(i)}
+                          onToggleImpact={() => toggleScenarioImpact(i)}
+                          onTogglePreview={() => toggleScenarioPreview(i)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {/* Input Area */}
-          <div style={{ padding: 12, borderTop: "1px solid #222222" }}>
-            <div className="flex gap-1.5" style={{ marginBottom: 8 }}>
-              <button
-                onClick={handleRewriteScene}
-                disabled={isStreaming}
-                className="flex items-center gap-1"
-                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
-              >
-                <SparkleIcon /> Rewrite scene
-              </button>
-              <button
-                onClick={handleSuggestNext}
-                disabled={isStreaming}
-                className="flex items-center gap-1"
-                style={{ fontSize: 11, padding: "4px 9px", borderRadius: 3, border: "1px solid #222222", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: isStreaming ? 0.5 : 1, transition: "all 0.2s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "linear-gradient(135deg, rgba(196,62,62,0.2), rgba(255,255,255,0.15))"; e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "rgba(196,62,62,0.4)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#222222"; }}
-              >
-                <SparkleIcon /> Suggest next line
-              </button>
+              {/* Chat messages — visible when not in bible tab */}
+              {aiPanelTab !== "bible" && <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
+                <div style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#666666", lineHeight: 1.5 }}>
+                  <strong style={{ color: "#4ade80", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>📍 Current Scene Context</strong>
+                  Scene {currentScene} · {stripHtml(scenes[currentScene - 1]?.text || "Start writing")}
+                </div>
+                {messages.map((msg) => <AIMessage key={msg.id} msg={msg} />)}
+                {isStreaming && (
+                  <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
+                    <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(0,0,0,0.06)", color: "#666666", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
+                    <div className="flex-1">
+                      <div style={{ fontSize: 10, color: "#aaaaaa", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>ScriptMind</div>
+                      <div style={{ fontSize: 12.5, background: "#f0f0f0", border: "1px solid #e0e0e0", borderRadius: 6, padding: "10px 12px", color: "#666666" }}>
+                        <span style={{ animation: "pulse 1s ease-in-out infinite" }}>●</span>
+                        <span style={{ animation: "pulse 1s ease-in-out infinite 0.2s" }}> ●</span>
+                        <span style={{ animation: "pulse 1s ease-in-out infinite 0.4s" }}> ●</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>}
+
+              {/* Input — hidden in bible tab */}
+              {aiPanelTab !== "bible" && (() => {
+                const inputArea = (
+                  <div style={{ padding: 12, borderTop: "1px solid #e0e0e0", flexShrink: 0 }}>
+                    {anchoredScenario !== null && (
+                      <div style={{ marginBottom: 8, padding: "4px 10px", borderRadius: 20, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, color: "#4ade80" }}>↳ Exploring: "{scenarios[anchoredScenario]?.title}"</span>
+                        <button onClick={() => setAnchoredScenario(null)} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "0 0 0 8px" }}>✕</button>
+                      </div>
+                    )}
+                    <div style={{ marginBottom: 8 }}>
+                      <button
+                        onClick={handleExplore} disabled={isExploring}
+                        style={{ fontSize: 11.5, padding: "7px 12px", borderRadius: 4, border: "1px solid rgba(74,222,128,0.3)", background: isExploring ? "rgba(74,222,128,0.05)" : "transparent", color: "#4ade80", cursor: isExploring ? "default" : "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.2s", opacity: isExploring ? 0.7 : 1 }}
+                        onMouseEnter={(e) => { if (!isExploring) e.currentTarget.style.background = "rgba(74,222,128,0.08)"; }}
+                        onMouseLeave={(e) => { if (!isExploring) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <SparkleIcon /> {isExploring ? "Analyzing…" : "✦ Alternative Scene Analysis"}
+                      </button>
+                    </div>
+                    <div className="flex gap-2 items-end">
+                      <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); } }} placeholder="Ask anything about your script…" rows={2}
+                        style={{ flex: 1, background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 6, padding: "9px 12px", fontSize: 12.5, color: "#1a1a1a", fontFamily: "inherit", resize: "none", outline: "none", lineHeight: 1.5 }}
+                        onFocus={(e) => { e.target.style.borderColor = "#4ade80"; }} onBlur={(e) => { e.target.style.borderColor = "#e0e0e0"; }}
+                      />
+                      <button onClick={() => sendMessage(chatInput)} disabled={isStreaming || !chatInput.trim()}
+                        style={{ width: 34, height: 34, borderRadius: 6, backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #16a34a, #4ade80, #16a34a)" : "none", backgroundColor: chatInput.trim() ? "transparent" : "#e8e8e8", backgroundSize: "200% 200%", animation: chatInput.trim() ? "gradientShift 3s ease infinite" : "none", border: "none", cursor: chatInput.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", color: chatInput.trim() ? "#000" : "#aaaaaa", flexShrink: 0, transition: "all 0.15s", boxShadow: chatInput.trim() ? "0 2px 12px rgba(74,222,128,0.3)" : "none" }}
+                      >
+                        <SendIcon />
+                      </button>
+                    </div>
+                  </div>
+                );
+                return inputArea;
+              })()}
             </div>
-            <div className="flex gap-2 items-end">
-              <textarea
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); } }}
-                placeholder="Ask anything about your script…"
-                rows={2}
-                style={{
-                  flex: 1, background: "#111111", border: "1px solid #222222",
-                  borderRadius: 6, padding: "9px 12px", fontSize: 12.5,
-                  color: "#e8e8e8", fontFamily: "inherit", resize: "none",
-                  outline: "none", lineHeight: 1.5,
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222222"; }}
-              />
-              <button
-                onClick={() => sendMessage(chatInput)}
-                disabled={isStreaming || !chatInput.trim()}
-                style={{
-                  width: 34, height: 34, borderRadius: 6,
-                  backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #c43e3e, #d45555, #c43e3e)" : "none",
-                  backgroundColor: chatInput.trim() ? "transparent" : "#222222",
-                  backgroundSize: "200% 200%",
-                  animation: chatInput.trim() ? "gradientShift 3s ease infinite" : "none",
-                  border: "none", cursor: chatInput.trim() ? "pointer" : "default",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "white", flexShrink: 0, transition: "all 0.15s",
-                  boxShadow: chatInput.trim() ? "0 2px 12px rgba(196,62,62,0.4)" : "none",
-                }}
-              >
-                <SendIcon />
-              </button>
+          ) : (
+            /* ── WRITING MODE ── */
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {/* Chat tab */}
+              {aiPanelTab === "chat" && (
+                <>
+                  <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
+                    <div style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 6, padding: "10px 12px", fontSize: 11.5, color: "#666666", lineHeight: 1.5 }}>
+                      <strong style={{ color: "#4ade80", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>📍 Current Scene Context</strong>
+                      Scene {currentScene} · {stripHtml(scenes[currentScene - 1]?.text || "Start writing")} · {
+                        (() => {
+                          const chars = [];
+                          let inScene = false;
+                          for (const el of elements) {
+                            if (el.type === "scene-heading") {
+                              if (inScene) break;
+                              if (getCurrentSceneIndex(elements, el.id) === currentScene) inScene = true;
+                            }
+                            if (inScene && el.type === "character" && !chars.includes(stripHtml(el.text))) chars.push(stripHtml(el.text));
+                          }
+                          return chars.length > 0 ? chars.join(" + ") : "No characters yet";
+                        })()
+                      }
+                    </div>
+                    {messages.map((msg) => <AIMessage key={msg.id} msg={msg} />)}
+                    {isStreaming && (
+                      <div className="flex gap-2.5" style={{ animation: "fadeUp 0.3s ease" }}>
+                        <div className="flex-shrink-0 flex items-center justify-center rounded-full" style={{ width: 28, height: 28, background: "rgba(0,0,0,0.06)", color: "#666666", fontSize: 11, fontWeight: 600, fontFamily: "'Playfair Display', serif", fontStyle: "italic" }}>S</div>
+                        <div className="flex-1">
+                          <div style={{ fontSize: 10, color: "#aaaaaa", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>ScriptMind</div>
+                          <div style={{ fontSize: 12.5, background: "#f0f0f0", border: "1px solid #e0e0e0", borderRadius: 6, padding: "10px 12px", color: "#666666" }}>
+                            <span style={{ animation: "pulse 1s ease-in-out infinite" }}>●</span>
+                            <span style={{ animation: "pulse 1s ease-in-out infinite 0.2s" }}> ●</span>
+                            <span style={{ animation: "pulse 1s ease-in-out infinite 0.4s" }}> ●</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                  <div style={{ padding: 12, borderTop: "1px solid #e0e0e0", flexShrink: 0 }}>
+                    {anchoredScenario !== null && (
+                      <div style={{ marginBottom: 8, padding: "4px 10px", borderRadius: 20, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, color: "#4ade80" }}>↳ Exploring: "{scenarios[anchoredScenario]?.title}"</span>
+                        <button onClick={() => setAnchoredScenario(null)} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "0 0 0 8px" }}>✕</button>
+                      </div>
+                    )}
+                    <div style={{ marginBottom: 8 }}>
+                      <button
+                        onClick={handleExplore} disabled={isExploring}
+                        style={{ fontSize: 11.5, padding: "7px 12px", borderRadius: 4, border: "1px solid rgba(74,222,128,0.3)", background: isExploring ? "rgba(74,222,128,0.05)" : "transparent", color: "#4ade80", cursor: isExploring ? "default" : "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.2s", opacity: isExploring ? 0.7 : 1 }}
+                        onMouseEnter={(e) => { if (!isExploring) e.currentTarget.style.background = "rgba(74,222,128,0.08)"; }}
+                        onMouseLeave={(e) => { if (!isExploring) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <SparkleIcon /> {isExploring ? "Analyzing…" : "✦ Alternative Scene Analysis"}
+                      </button>
+                    </div>
+                    <div className="flex gap-2 items-end">
+                      <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); } }} placeholder="Ask anything about your script…" rows={2}
+                        style={{ flex: 1, background: "#ffffff", border: "1px solid #e0e0e0", borderRadius: 6, padding: "9px 12px", fontSize: 12.5, color: "#1a1a1a", fontFamily: "inherit", resize: "none", outline: "none", lineHeight: 1.5 }}
+                        onFocus={(e) => { e.target.style.borderColor = "#4ade80"; }} onBlur={(e) => { e.target.style.borderColor = "#e0e0e0"; }}
+                      />
+                      <button onClick={() => sendMessage(chatInput)} disabled={isStreaming || !chatInput.trim()}
+                        style={{ width: 34, height: 34, borderRadius: 6, backgroundImage: chatInput.trim() ? "linear-gradient(135deg, #16a34a, #4ade80, #16a34a)" : "none", backgroundColor: chatInput.trim() ? "transparent" : "#e8e8e8", backgroundSize: "200% 200%", animation: chatInput.trim() ? "gradientShift 3s ease infinite" : "none", border: "none", cursor: chatInput.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", color: chatInput.trim() ? "#000" : "#aaaaaa", flexShrink: 0, transition: "all 0.15s", boxShadow: chatInput.trim() ? "0 2px 12px rgba(74,222,128,0.3)" : "none" }}
+                      >
+                        <SendIcon />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Explore tab — vertical stacked cards */}
+              {aiPanelTab === "explore" && (
+                <div className="flex-1 overflow-y-auto flex flex-col" style={{ padding: 12, gap: 10 }}>
+                  {scenarios.length === 0 ? (
+                    <div style={{ textAlign: "center", color: "#aaaaaa", fontSize: 12, padding: "40px 16px", lineHeight: 1.6 }}>
+                      Click "✦ Alternative Scene Analysis" to explore directions for this scene.
+                    </div>
+                  ) : (
+                    scenarios.map((s, i) => (
+                      <ScenarioCard
+                        key={i} scenario={s} index={i}
+                        onDiscuss={() => handleDiscuss(i)}
+                        onToggleImpact={() => toggleScenarioImpact(i)}
+                        onTogglePreview={() => toggleScenarioPreview(i)}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* ── STATUS BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "linear-gradient(90deg, #0a0a0a, #101010, #0a0a0a)", borderTop: "1px solid #222222", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#555555", fontFamily: "'IBM Plex Mono', monospace" }}>
-        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#c43e3e" }} />
+      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "#f0f0f0", borderTop: "1px solid #e0e0e0", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#aaaaaa", fontFamily: "'IBM Plex Mono', monospace" }}>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80" }} />
         <span>Auto-saved</span>
         <span>·</span>
         <span>Screenplay format</span>
