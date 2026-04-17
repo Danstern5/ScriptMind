@@ -5,7 +5,7 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
       className="absolute z-50"
       style={{
         top: 42, left: 0,
-        background: "#111111", border: "1px solid #222222",
+        background: "#1e293b", border: "1px solid #334155",
         borderRadius: 6, padding: 4, minWidth: 180,
         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
       }}
@@ -20,7 +20,7 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
         { label: "Export as .fdx", icon: "↓", action: onExportFDX },
       ].map((item, i) =>
         item.divider ? (
-          <div key={i} style={{ height: 1, background: "#222222", margin: "4px 0" }} />
+          <div key={i} style={{ height: 1, background: "#334155", margin: "4px 0" }} />
         ) : (
           <button
             key={i}
@@ -31,7 +31,7 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
               background: "transparent", color: "#888888", fontSize: 12,
               cursor: "pointer", fontFamily: "inherit",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#222222"; e.currentTarget.style.color = "#e8e8e8"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#334155"; e.currentTarget.style.color = "#e8e8e8"; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
           >
             <span style={{ width: 16, textAlign: "center", fontSize: 11 }}>{item.icon}</span>

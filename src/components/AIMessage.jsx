@@ -4,7 +4,7 @@ export default function AIMessage({ msg }) {
   const formatText = (text) => {
     return text.split("\n").map((line, i) => {
       let formatted = line.replace(/\*([^*]+)\*/g, '<em style="color:#ffffff;font-style:normal;font-weight:500">$1</em>');
-      formatted = formatted.replace(/^• /, '<span style="color:#c43e3e">•</span> ');
+      formatted = formatted.replace(/^• /, '<span style="color:#64748b">•</span> ');
       return <p key={i} dangerouslySetInnerHTML={{ __html: formatted }} style={{ marginBottom: line === "" ? 8 : 2 }} />;
     });
   };
@@ -15,8 +15,8 @@ export default function AIMessage({ msg }) {
         className="flex-shrink-0 flex items-center justify-center rounded-full"
         style={{
           width: 28, height: 28,
-          background: isAI ? "rgba(196,62,62,0.2)" : "rgba(255,255,255,0.1)",
-          color: isAI ? "#c43e3e" : "#e8e8e8",
+          background: isAI ? "rgba(100,116,139,0.2)" : "rgba(255,255,255,0.1)",
+          color: isAI ? "#64748b" : "#e8e8e8",
           fontSize: 11, fontWeight: 600,
           fontFamily: isAI ? "'Playfair Display', serif" : "inherit",
           fontStyle: isAI ? "italic" : "normal",
@@ -31,15 +31,15 @@ export default function AIMessage({ msg }) {
         <div
           style={{
             fontSize: 12.5, lineHeight: 1.6,
-            background: isAI ? "#111111" : "rgba(255,255,255,0.06)",
-            border: `1px solid ${isAI ? "#222222" : "rgba(255,255,255,0.15)"}`,
+            background: isAI ? "#1e293b" : "rgba(255,255,255,0.06)",
+            border: `1px solid ${isAI ? "#334155" : "rgba(255,255,255,0.15)"}`,
             borderRadius: 6, padding: "10px 12px", color: "#e8e8e8",
           }}
         >
           {formatText(msg.text)}
         </div>
         {msg.streaming && (
-          <div style={{ marginTop: 4, fontSize: 11, color: "#c43e3e" }}>
+          <div style={{ marginTop: 4, fontSize: 11, color: "#64748b" }}>
             <span className="inline-block" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>●</span> Thinking...
           </div>
         )}

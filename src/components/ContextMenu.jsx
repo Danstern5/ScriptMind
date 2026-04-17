@@ -11,7 +11,7 @@ export default function ContextMenu({ x, y, items, onClose }) {
     <div
       style={{
         position: "fixed", left: x, top: y, zIndex: 100,
-        background: "#1a1a1a", border: "1px solid #333", borderRadius: 6,
+        background: "#6D8196", border: "1px solid #475569", borderRadius: 6,
         padding: 4, minWidth: 180, boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
       }}
     >
@@ -26,7 +26,7 @@ export default function ContextMenu({ x, y, items, onClose }) {
             fontSize: 12, cursor: "pointer", fontFamily: "inherit",
             display: "flex", alignItems: "center", gap: 8,
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#333"; e.currentTarget.style.color = "#e8e8e8"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#475569"; e.currentTarget.style.color = "#e8e8e8"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = item.checked ? "#e8e8e8" : "#888888"; }}
         >
           <span style={{ width: 14, fontSize: 11 }}>{item.checked ? "✓" : ""}</span>

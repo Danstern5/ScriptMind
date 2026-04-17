@@ -13,7 +13,7 @@ export default function TitlePageEditor({ titlePage, onChange, onClose }) {
   ];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "none" }} onClick={handleClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 420, background: "#111111", border: "1px solid #222222", borderRadius: 8, padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", animation: "fadeUp 0.2s ease" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 420, background: "#1e293b", border: "1px solid #334155222", borderRadius: 8, padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", animation: "fadeUp 0.2s ease" }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
           <span style={{ fontSize: 14, fontWeight: 500, color: "#e8e8e8" }}>Title Page</span>
           <button onClick={handleClose} style={{ background: "transparent", border: "none", color: "#555", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
@@ -26,18 +26,18 @@ export default function TitlePageEditor({ titlePage, onChange, onClose }) {
                 value={local[key]}
                 onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
                 rows={2}
-                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", resize: "none", outline: "none" }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
+                style={{ width: "100%", background: "#6D8196", border: "1px solid #334155", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", resize: "none", outline: "none" }}
+                onFocus={(e) => { e.target.style.borderColor = "#64748b"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#334155"; }}
                 placeholder="Agent / Manager / Email"
               />
             ) : (
               <input
                 value={local[key]}
                 onChange={(e) => setLocal((p) => ({ ...p, [key]: e.target.value }))}
-                style={{ width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", outline: "none", boxSizing: "border-box" }}
-                onFocus={(e) => { e.target.style.borderColor = "#c43e3e"; }}
-                onBlur={(e) => { e.target.style.borderColor = "#222"; }}
+                style={{ width: "100%", background: "#6D8196", border: "1px solid #334155", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "#e8e8e8", fontFamily: "'Courier Prime', monospace", outline: "none", boxSizing: "border-box" }}
+                onFocus={(e) => { e.target.style.borderColor = "#64748b"; }}
+                onBlur={(e) => { e.target.style.borderColor = "#334155"; }}
                 placeholder={label}
               />
             )}
