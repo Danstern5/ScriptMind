@@ -25,7 +25,7 @@ src/
   ScriptMind.jsx    # Main app component — state, handlers, layout shell (~490 lines)
   App.jsx           # Root wrapper — AuthProvider gate (renders AuthPage or ScriptMind)
   main.jsx          # Entry point
-  index.css         # Tailwind + Google Fonts imports
+  index.css         # Tailwind + Google Fonts imports + CSS custom properties (color/font tokens)
   components/
     Icons.jsx              # SendIcon, PlusIcon, FileIcon, DownloadIcon, SparkleIcon, ChevronIcon
     ContextMenu.jsx        # Right-click context menu
@@ -88,8 +88,9 @@ backend/
 
 ## Auth System
 - JWT (HS256) with 7-day expiry, stored in localStorage as `scriptmind_token`
-- Password hashing: bcrypt via passlib
+- Password hashing: bcrypt via passlib — **bcrypt is pinned to `<4.1`** because bcrypt 4.x raises a hard 72-byte ValueError on passlib's internal capability probe, breaking signup
 - Frontend: AuthContext validates token on mount via `GET /api/auth/me`
+- App.jsx wraps `<AuthProvider>` around an `<AppGate>` that renders `AuthPage` while logged out / `Loading…` during validation / `ScriptMind` once authenticated
 - All `/api/scripts/` routes require `Authorization: Bearer <token>`
 - CORS allows `localhost:5173` and `localhost:3000`
 
@@ -104,7 +105,8 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 - IDs prefixed: `el-` for elements, `m-` for messages
 - ContentEditable divs for text editing
 - Rich text via `document.execCommand()` (Cmd+B/I/U)
-- Dark slate theme, Courier Prime for screenplay text, IBM Plex Sans for UI
+- White/grey theme with green accent (`#4ade80`); Playfair Display for headers, IBM Plex Sans for UI, IBM Plex Mono for labels, Courier Prime for screenplay text
+- All colors and fonts go through CSS custom properties defined in `src/index.css` (`var(--bg-canvas)`, `var(--text-primary)`, `var(--accent-green)`, `var(--font-serif)`, etc.) — never hardcode hex values
 - Desktop-only layout (sidebar 220px, editor 680px, AI panel 360px)
 - Color system documented in `colorscheme.md`
 
@@ -119,4 +121,32 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 - Import accepts `.fountain`, `.fdx`, `.txt` — parsers return fallback (`DEFAULT_SCRIPT.elements`) on failure
 - Export: PDF (`utils/pdfExport.js`), `.fountain`, `.fdx` (Final Draft XML)
 - `parseFountain` and `parseFDX` in `utils/import.js` take a second `fallbackElements` parameter
+
+## Port In Progress (`port-redesign` branch)
+
+The `port-redesign` branch is incrementally bringing partner Dan's `origin/Redesign416-dan` features into the refactored main. Phases 0+1 are complete (theme migration); Phases 2–7 add features. Full plan: `PORT_REDESIGN_PLAN.md`.
+
+**Target frontend structure once port is complete (Phases 2–8):**
+
+New files added under `src/`:
+```
+components/
+  ScenarioCard.jsx       # Presentational card for "what-if" scene scenarios
+  ScriptBible.jsx        # Two-mode bible editor: "writing" (modal) and "thinking" (split column)
+  SelectionToolbar.jsx   # Floating toolbar that appears when text is selected in the editor
+utils/
+  scenarios.js           # PLACEHOLDER_SCENARIOS data + scenario helpers
+  scriptBible.js         # DEFAULT_SCRIPT_BIBLE constant
+```
+
+Modified files:
+- `AIMessage.jsx` — adds `msg.quote` rendering (Courier Prime block) + lightweight markdown (`**bold**`, `*emphasis*`, `- ` bullets)
+- `ScriptMind.jsx` — new state: `isThinkingMode`, `aiPanelTab` (`"chat" | "bible" | "explore"`), `scriptBible`, `scenarios`, `anchoredScenario`, `isExploring`, `toolbarSelection`, `showScriptBible`. New handlers: `handleExplore`, `handleDiscuss`, `toggleScenarioImpact/Preview`, `handleSelectionAction`. Adds `mouseup`/`selectionchange` listeners scoped to the editor.
+- `Sidebar.jsx` — adds Script Bible button (footer) and Thinking Mode toggle
+- `EditorArea.jsx` — flex-shrink animation when Thinking Mode active
+- `AIPanel.jsx` — width animation 360px ↔ ~100%, tab bar (Bible/Explore/Chat) when in Thinking Mode
+
+**Persistence (Phase 5):** `scriptBible` saved to localStorage as `scriptmind_bible_<scriptId>` (backend column comes later — out of scope for this port).
+
+**Out of scope:** Real AI for Script Bible "AI reading" fields and Explore scenario generation — placeholders ship now, real AI is follow-up work.
 
