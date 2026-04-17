@@ -1,6 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&family=Courier+Prime&display=swap');
 @import "tailwindcss";
 
+:root {
+  --bg-canvas: #f0f0f0;
+  --bg-panel: #f8f8f8;
+  --bg-surface: #ffffff;
+  --bg-muted: #f5f5f5;
+
+  --border-default: #e0e0e0;
+  --border-subtle: #e8e8e8;
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-tertiary: #888888;
+  --text-label: #aaaaaa;
+  --text-muted: #bbbbbb;
+  --text-placeholder: #cccccc;
+
+  --accent-green: #4ade80;
+  --warning-amber: #c89600;
+
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono-ui: 'IBM Plex Mono', monospace;
+  --font-screenplay: 'Courier Prime', monospace;
+}
+
 body {
   margin: 0;
 }

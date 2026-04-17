@@ -5,9 +5,9 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
       className="absolute z-50"
       style={{
         top: 42, left: 0,
-        background: "#1e293b", border: "1px solid #334155",
+        background: "var(--bg-surface)", border: "1px solid var(--border-default)",
         borderRadius: 6, padding: 4, minWidth: 180,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
       }}
     >
       {[
@@ -20,7 +20,7 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
         { label: "Export as .fdx", icon: "↓", action: onExportFDX },
       ].map((item, i) =>
         item.divider ? (
-          <div key={i} style={{ height: 1, background: "#334155", margin: "4px 0" }} />
+          <div key={i} style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }} />
         ) : (
           <button
             key={i}
@@ -28,11 +28,11 @@ export default function FileMenu({ onNew, onImport, onExportPDF, onExportFountai
             className="w-full text-left flex items-center gap-2"
             style={{
               padding: "6px 10px", borderRadius: 4, border: "none",
-              background: "transparent", color: "#888888", fontSize: 12,
+              background: "transparent", color: "#555555", fontSize: 12,
               cursor: "pointer", fontFamily: "inherit",
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#334155"; e.currentTarget.style.color = "#e8e8e8"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-canvas)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#555555"; }}
           >
             <span style={{ width: 16, textAlign: "center", fontSize: 11 }}>{item.icon}</span>
             {item.label}

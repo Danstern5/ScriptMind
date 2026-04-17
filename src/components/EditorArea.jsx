@@ -11,9 +11,9 @@ export default function EditorArea({
   titlePage, setShowTitlePageEditor,
 }) {
   return (
-    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "#6D8196" }}>
+    <div className="flex flex-col flex-1 overflow-hidden" style={{ background: "var(--bg-surface)" }}>
       {/* Toolbar */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "#6D8196", borderBottom: "1px solid #334155", padding: "0 16px", gap: 4 }}>
+      <div className="flex items-center flex-shrink-0" style={{ height: 38, background: "var(--bg-surface)", borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 4 }}>
         {ELEMENT_TYPES.map((type) => {
           const activeEl = elements.find((e) => e.id === activeElId);
           const isActive = activeEl?.type === type;
@@ -24,11 +24,11 @@ export default function EditorArea({
               onClick={() => { if (activeElId) changeElementType(activeElId, type); }}
               style={{
                 fontSize: 11, padding: "3px 9px", borderRadius: 3,
-                background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
-                border: isActive ? "1px solid rgba(255,255,255,0.25)" : "1px solid transparent",
-                color: isActive ? "#e8e8e8" : "#888888",
+                background: isActive ? "rgba(74,222,128,0.06)" : "transparent",
+                border: isActive ? "1px solid var(--accent-green)" : "1px solid transparent",
+                color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
                 cursor: "pointer",
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: "var(--font-mono-ui)",
                 transition: "all 0.1s",
               }}
             >
@@ -37,7 +37,7 @@ export default function EditorArea({
           );
         })}
         {/* Formatting separator + B/I/U buttons */}
-        <div style={{ width: 1, height: 18, background: "#334155", margin: "0 4px" }} />
+        <div style={{ width: 1, height: 18, background: "var(--border-default)", margin: "0 4px" }} />
         {[
           { label: "B", cmd: "bold", style: { fontWeight: 700 } },
           { label: "I", cmd: "italic", style: { fontStyle: "italic" } },
@@ -49,37 +49,37 @@ export default function EditorArea({
             style={{
               fontSize: 12, padding: "3px 7px", borderRadius: 3,
               background: "transparent", border: "1px solid transparent",
-              color: "#888888", cursor: "pointer",
-              fontFamily: "'Courier Prime', 'Courier New', monospace",
+              color: "var(--text-secondary)", cursor: "pointer",
+              fontFamily: "var(--font-screenplay)",
               transition: "all 0.1s", ...fmt.style,
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#e8e8e8"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#888888"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.06)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
             title={`${fmt.cmd.charAt(0).toUpperCase() + fmt.cmd.slice(1)} (⌘${fmt.label})`}
           >
             {fmt.label}
           </button>
         ))}
-        <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", color: "#555555" }}>
+        <div style={{ marginLeft: "auto", fontSize: 11, fontFamily: "var(--font-mono-ui)", color: "var(--text-label)" }}>
           Page {currentPage} of {numPages} · Scene {currentScene}
         </div>
       </div>
 
       {/* Editor — continuous flow with page gaps */}
-      <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "#6D8196" }}>
+      <div ref={editorScrollRef} className="flex-1 overflow-y-auto flex flex-col items-center" style={{ padding: "32px 24px", background: "radial-gradient(ellipse at center, #dadada, #d0d0d0)" }}>
         {/* Visual Title Page */}
         <div
           onClick={() => setShowTitlePageEditor(true)}
           style={{
             width: 680, height: PAGE_HEIGHT, marginBottom: PAGE_GAP, borderRadius: 2, cursor: "pointer",
-            background: "#ffffff", position: "relative", flexShrink: 0,
-            boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15)",
+            background: "var(--bg-surface)", position: "relative", flexShrink: 0,
+            boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
             display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
-            fontFamily: "'Courier Prime', 'Courier New', monospace", color: "#111",
+            fontFamily: "var(--font-screenplay)", color: "var(--text-primary)",
             transition: "box-shadow 0.2s",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.3)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15)"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.04)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)"; }}
         >
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "24pt", fontWeight: "bold", marginBottom: 8 }}>{titlePage.title || "Untitled"}</div>
@@ -93,7 +93,7 @@ export default function EditorArea({
               {titlePage.contact && <div style={{ whiteSpace: "pre-line" }}>{titlePage.contact}</div>}
             </div>
           )}
-          <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "#aaa", opacity: 0.6 }}>Click to edit</div>
+          <div style={{ position: "absolute", top: 8, right: 12, fontSize: 10, color: "var(--text-label)", opacity: 0.6 }}>Click to edit</div>
         </div>
 
         <div style={{ position: "relative", width: 680, flexShrink: 0, minHeight: numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP }}>
@@ -117,8 +117,8 @@ export default function EditorArea({
               top: i * (PAGE_HEIGHT + PAGE_GAP),
               left: 0, width: 680, height: PAGE_HEIGHT,
               borderRadius: 2,
-              background: "#ffffff",
-              boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(100,116,139,0.15), 0 0 120px rgba(100,116,139,0.05)",
+              background: "var(--bg-surface)",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
               pointerEvents: "none",
             }} />
           ))}
@@ -127,10 +127,10 @@ export default function EditorArea({
             ref={contentRef}
             style={{
               width: 680,
-              background: "#ffffff",
+              background: "var(--bg-surface)",
               borderRadius: 2,
               padding: "72px 72px 72px 108px",
-              color: "#6D8196",
+              color: "var(--text-primary)",
               position: "relative",
               clipPath: "url(#page-clip)",
             }}
@@ -165,8 +165,8 @@ export default function EditorArea({
                   {el.id === activeElId && suggestions.length > 0 && (
                     <div style={{
                       position: "absolute", left: 0, top: "100%", zIndex: 20,
-                      background: "#6D8196", border: "1px solid #475569", borderRadius: 4,
-                      boxShadow: "0 4px 16px rgba(0,0,0,0.5)", minWidth: 220, maxWidth: 400,
+                      background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 4,
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 220, maxWidth: 400,
                       overflow: "hidden", marginTop: 2,
                     }}>
                       {suggestions.map((s, si) => (
@@ -176,16 +176,16 @@ export default function EditorArea({
                           onMouseEnter={() => setAcIndex(si)}
                           style={{
                             padding: "6px 12px", fontSize: 12, cursor: "pointer",
-                            fontFamily: "'Courier Prime', 'Courier New', monospace",
-                            background: si === acIndex ? "rgba(100,116,139,0.25)" : "transparent",
-                            color: si === acIndex ? "#e8e8e8" : "#aaa",
-                            borderLeft: si === acIndex ? "2px solid #64748b" : "2px solid transparent",
+                            fontFamily: "var(--font-screenplay)",
+                            background: si === acIndex ? "rgba(0,0,0,0.05)" : "transparent",
+                            color: si === acIndex ? "var(--text-primary)" : "var(--text-tertiary)",
+                            borderLeft: si === acIndex ? "2px solid var(--accent-green)" : "2px solid transparent",
                           }}
                         >
                           {s}
                         </div>
                       ))}
-                      <div style={{ padding: "4px 12px", fontSize: 10, color: "#555", borderTop: "1px solid #334155" }}>
+                      <div style={{ padding: "4px 12px", fontSize: 10, color: "var(--text-label)", borderTop: "1px solid var(--border-subtle)" }}>
                         ↑↓ navigate · Tab/Enter accept · Esc dismiss
                       </div>
                     </div>
@@ -234,13 +234,13 @@ export default function EditorArea({
                     const marker = pageBreakMarkers.find(m => m.pageIndex === i - 1);
                     return marker ? (
                       <span style={{
-                        fontFamily: "'Courier Prime', 'Courier New', monospace",
+                        fontFamily: "var(--font-screenplay)",
                         fontSize: "12pt", color: "#333333", paddingBottom: 4,
                       }}>{marker.characterName} (CONT'D)</span>
                     ) : <span />;
                   })()}
                   <span style={{
-                    fontFamily: "'Courier Prime', 'Courier New', monospace",
+                    fontFamily: "var(--font-screenplay)",
                     fontSize: "12pt",
                     color: "#333333",
                     paddingBottom: 4,
@@ -256,7 +256,7 @@ export default function EditorArea({
               }}>
                 {pageBreakMarkers.some(m => m.pageIndex === i) && (
                   <span style={{
-                    fontFamily: "'Courier Prime', 'Courier New', monospace",
+                    fontFamily: "var(--font-screenplay)",
                     fontSize: "12pt", color: "#333333",
                   }}>(MORE)</span>
                 )}

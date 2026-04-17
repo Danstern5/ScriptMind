@@ -4,15 +4,14 @@ import { PlusIcon } from "./Icons";
 
 export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved }) {
   return (
-    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "linear-gradient(180deg, #6D8196, #6D8196, #6D8196)", borderRight: "1px solid #334155" }}>
+    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)" }}>
       <div style={{ padding: "12px 14px 8px" }}>
-        <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "#555555", marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-label)", marginBottom: 8, fontFamily: "var(--font-mono-ui)" }}>
           Scenes
         </div>
         <div className="flex flex-col gap-0.5" style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}>
           {scenes.map((scene, i) => {
             const isActive = scene.id === activeElId || getCurrentSceneIndex(elements, activeElId) === i + 1;
-            const color = isActive ? "#64748b" : "#555555";
             return (
               <div
                 key={scene.id}
@@ -20,20 +19,27 @@ export default function Sidebar({ scenes, elements, activeElId, currentScene, ju
                 className="flex items-center gap-2 cursor-pointer"
                 style={{
                   padding: "7px 10px", borderRadius: 4,
-                  background: isActive ? "rgba(100,116,139,0.15)" : "transparent",
-                  borderLeft: isActive ? `2px solid ${color}` : "2px solid transparent",
-                  boxShadow: isActive ? `inset 3px 0 8px -4px ${color}` : "none",
+                  background: isActive ? "rgba(74,222,128,0.06)" : "transparent",
+                  borderLeft: isActive ? "2px solid var(--accent-green)" : "2px solid transparent",
                   transition: "all 0.2s",
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#1e293b"; }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
                 onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
               >
                 <span style={{
-                  fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, minWidth: 18, height: 18,
+                  fontFamily: "var(--font-mono-ui)", fontSize: 9, minWidth: 18, height: 18,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  borderRadius: "50%", backgroundColor: isActive ? "rgba(100,116,139,0.13)" : "rgba(85,85,85,0.13)", color: color, fontWeight: 600,
+                  borderRadius: "50%",
+                  backgroundColor: isActive ? "rgba(74,222,128,0.1)" : "rgba(0,0,0,0.07)",
+                  color: isActive ? "var(--accent-green)" : "var(--text-label)",
+                  fontWeight: 600,
                 }}>{i + 1}</span>
-                <span style={{ fontSize: 12, color: isActive ? "#e8e8e8" : "#888888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <span style={{
+                  fontSize: 12,
+                  color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  fontFamily: "var(--font-mono-ui)",
+                }}>
                   {stripHtml(scene.text) || "UNTITLED SCENE"}
                 </span>
               </div>
@@ -50,24 +56,24 @@ export default function Sidebar({ scenes, elements, activeElId, currentScene, ju
             insertElementAfter(lastId, "scene-heading", "");
           }}
           className="flex items-center gap-1.5 w-full"
-          style={{ fontSize: 11, color: "#555555", background: "transparent", border: "1px dashed #334155", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#888888"; e.currentTarget.style.borderColor = "#888888"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#555555"; e.currentTarget.style.borderColor = "#334155"; }}
+          style={{ fontSize: 11, color: "var(--text-label)", background: "transparent", border: "1px dashed var(--text-placeholder)", borderRadius: 4, padding: "5px 8px", cursor: "pointer", fontFamily: "inherit" }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.borderColor = "#999999"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-label)"; e.currentTarget.style.borderColor = "var(--text-placeholder)"; }}
         >
           <PlusIcon /> Add Scene
         </button>
       </div>
 
-      <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid #334155" }}>
+      <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid var(--border-default)" }}>
         {[
           ["Pages", `${numPages} / 110`],
           ["Words", wordCount.toLocaleString()],
           ["Scenes", scenes.length],
           ["Last saved", lastSaved],
         ].map(([label, value]) => (
-          <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "#555555", marginBottom: 2 }}>
+          <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "var(--text-label)", marginBottom: 2 }}>
             <span>{label}</span>
-            <span style={{ color: "#888888" }}>{value}</span>
+            <span style={{ color: "var(--text-secondary)" }}>{value}</span>
           </div>
         ))}
       </div>

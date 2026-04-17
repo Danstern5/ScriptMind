@@ -309,7 +309,7 @@ export default function ScriptMind() {
   return (
     <div
       className="flex flex-col h-screen w-full overflow-hidden"
-      style={{ background: "#6D8196", color: "#e8e8e8", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}
+      style={{ background: "var(--bg-canvas)", color: "var(--text-primary)", fontFamily: "var(--font-sans)" }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -323,12 +323,13 @@ export default function ScriptMind() {
         @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
         @keyframes rotateSpark { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #64748b, 0 0 8px rgba(100,116,139,0.4); } 50% { box-shadow: 0 0 8px #64748b, 0 0 16px rgba(100,116,139,0.6); } 100% { box-shadow: 0 0 4px #64748b, 0 0 8px rgba(100,116,139,0.4); } }
-        [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; }
+        @keyframes ringPulse { 0% { box-shadow: 0 0 4px #4ade80, 0 0 8px rgba(74,222,128,0.4); } 50% { box-shadow: 0 0 8px #4ade80, 0 0 16px rgba(74,222,128,0.6); } 100% { box-shadow: 0 0 4px #4ade80, 0 0 8px rgba(74,222,128,0.4); } }
+        [contenteditable]:empty:before { content: attr(data-placeholder); color: var(--text-placeholder); pointer-events: none; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        ::selection { background: rgba(100,116,139,0.25); }
+        ::-webkit-scrollbar-thumb { background: #cccccc; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #aaaaaa; }
+        ::selection { background: rgba(74,222,128,0.25); }
       `}</style>
 
       {/* Title Page Editor Modal */}
@@ -370,26 +371,26 @@ export default function ScriptMind() {
 
       {/* Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "#6D8196", border: "1px solid #334155", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#e8e8e8", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
-          <span style={{ color: "#64748b", marginRight: 6 }}>✓</span> {notification}
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2" style={{ animation: "slideIn 0.2s ease", background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "var(--text-primary)", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}>
+          <span style={{ color: "var(--accent-green)", marginRight: 6 }}>✓</span> {notification}
         </div>
       )}
 
       {/* Drag & drop overlay */}
       {isDragging && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(8px)" }}>
           <div className="flex flex-col items-center gap-4" style={{ animation: "fadeUp 0.2s ease" }}>
-            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed #64748b", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 80, height: 80, borderRadius: 16, border: "2px dashed var(--accent-green)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             </div>
-            <div style={{ fontSize: 18, fontWeight: 500, color: "#e8e8e8" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, color: "var(--text-primary)" }}>
               Drop your screenplay here
             </div>
-            <div style={{ fontSize: 13, color: "#888888" }}>
+            <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
               .fountain, .fdx, or .txt files supported
             </div>
           </div>
@@ -406,15 +407,15 @@ export default function ScriptMind() {
       />
 
       {/* ── TOP BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "linear-gradient(90deg, #6D8196, #6D8196, #6D8196)", borderBottom: "1px solid #334155", padding: "0 16px", gap: 16 }}>
+      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "var(--bg-canvas)", borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 16 }}>
         <div style={{
-          fontFamily: "'Playfair Display', serif", fontSize: 17, letterSpacing: "0.02em",
-          color: "#e8e8e8",
+          fontFamily: "var(--font-serif)", fontSize: 17, letterSpacing: "0.02em",
+          color: "var(--text-primary)",
         }}>
           Script<span style={{ fontStyle: "italic" }}>Mind</span>
         </div>
-        <div style={{ width: 1, height: 20, background: "#334155" }} />
-        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#888888" }}>
+        <div style={{ width: 1, height: 20, background: "var(--border-default)" }} />
+        <div style={{ fontFamily: "var(--font-mono-ui)", fontSize: 12, color: "var(--text-tertiary)" }}>
           {scriptTitle}.fdx
         </div>
 
@@ -423,7 +424,7 @@ export default function ScriptMind() {
             <button
               onClick={() => setFileMenuOpen(!fileMenuOpen)}
               className="flex items-center gap-1"
-              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
+              style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid var(--border-default)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
             >
               <FileIcon /> File <ChevronIcon />
             </button>
@@ -440,13 +441,13 @@ export default function ScriptMind() {
           </div>
           <button
             onClick={handleExportPDF}
-            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid var(--border-default)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
           >
             <DownloadIcon /> Export PDF
           </button>
           <button
             onClick={logout}
-            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid #334155", background: "transparent", color: "#888888", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
+            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid var(--border-default)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
           >
             Log out
           </button>
@@ -482,8 +483,8 @@ export default function ScriptMind() {
       </div>
 
       {/* ── STATUS BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "linear-gradient(90deg, #6D8196, #6D8196, #6D8196)", borderTop: "1px solid #334155", padding: "0 16px", gap: 16, fontSize: 10.5, color: "#555555", fontFamily: "'IBM Plex Mono', monospace" }}>
-        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#64748b" }} />
+      <div className="flex items-center flex-shrink-0" style={{ height: 24, background: "var(--bg-canvas)", borderTop: "1px solid var(--border-default)", padding: "0 16px", gap: 16, fontSize: 10.5, color: "var(--text-label)", fontFamily: "var(--font-mono-ui)" }}>
+        <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent-green)" }} />
         <span>Auto-saved</span>
         <span>·</span>
         <span>Screenplay format</span>

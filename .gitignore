@@ -30,6 +30,10 @@ backend/env/
 backend/venv/
 backend/.venv/
 
+# Playwright MCP artifacts (debugging only)
+.playwright-mcp/
+phase*-*.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

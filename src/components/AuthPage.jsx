@@ -28,28 +28,28 @@ export default function AuthPage() {
 
   const inputStyle = {
     width: "100%", padding: "8px 10px", borderRadius: 4,
-    border: "1px solid #475569", background: "#6D8196",
-    color: "#e8e8e8", fontSize: 13, fontFamily: "'Courier Prime', monospace",
+    border: "1px solid var(--border-default)", background: "var(--bg-panel)",
+    color: "var(--text-primary)", fontSize: 13, fontFamily: "var(--font-screenplay)",
     boxSizing: "border-box", outline: "none",
   };
 
   const labelStyle = {
-    fontSize: 11, color: "#555555", textTransform: "uppercase",
+    fontSize: 11, color: "var(--text-label)", textTransform: "uppercase",
     letterSpacing: "0.08em", display: "block", marginBottom: 4,
   };
 
   return (
     <div className="flex items-center justify-center h-screen w-full"
-      style={{ background: "#6D8196", fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}>
+      style={{ background: "var(--bg-canvas)", fontFamily: "var(--font-sans)" }}>
       <div style={{
-        background: "#1e293b", border: "1px solid #334155", borderRadius: 10,
-        padding: 32, width: 380, boxShadow: "0 16px 64px rgba(0,0,0,0.6)",
+        background: "var(--bg-surface)", border: "1px solid var(--border-default)", borderRadius: 10,
+        padding: 32, width: 380, boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
       }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, color: "#e8e8e8" }}>
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--text-primary)" }}>
             Script<span style={{ fontStyle: "italic" }}>Mind</span>
           </div>
-          <div style={{ fontSize: 12, color: "#888888", marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4 }}>
             {mode === "login" ? "Sign in to your account" : "Create your account"}
           </div>
         </div>
@@ -66,6 +66,8 @@ export default function AuthPage() {
             onKeyDown={handleKeyDown}
             placeholder="you@example.com"
             style={inputStyle}
+            onFocus={(e) => { e.target.style.borderColor = "var(--accent-green)"; }}
+            onBlur={(e) => { e.target.style.borderColor = "var(--border-default)"; }}
           />
         </div>
 
@@ -77,6 +79,8 @@ export default function AuthPage() {
             onKeyDown={handleKeyDown}
             placeholder="••••••••"
             style={inputStyle}
+            onFocus={(e) => { e.target.style.borderColor = "var(--accent-green)"; }}
+            onBlur={(e) => { e.target.style.borderColor = "var(--border-default)"; }}
           />
         </div>
 
@@ -85,19 +89,22 @@ export default function AuthPage() {
           disabled={submitting || !email.trim() || !password}
           style={{
             width: "100%", padding: "9px 0", borderRadius: 4, border: "none",
-            background: submitting || !email.trim() || !password ? "#475569" : "#64748b",
-            color: "#fff", fontSize: 12, fontWeight: 500, cursor: submitting ? "default" : "pointer",
+            backgroundImage: submitting || !email.trim() || !password ? "none" : "linear-gradient(135deg, #16a34a, #4ade80, #16a34a)",
+            backgroundColor: submitting || !email.trim() || !password ? "#e8e8e8" : "transparent",
+            color: submitting || !email.trim() || !password ? "var(--text-label)" : "#fff",
+            fontSize: 12, fontWeight: 500, cursor: submitting ? "default" : "pointer",
             fontFamily: "inherit",
+            boxShadow: submitting || !email.trim() || !password ? "none" : "0 2px 12px rgba(74,222,128,0.3)",
           }}
         >
           {submitting ? (mode === "login" ? "Signing in..." : "Creating account...") : (mode === "login" ? "Sign In" : "Sign Up")}
         </button>
 
-        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: "#888888" }}>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: "var(--text-tertiary)" }}>
           {mode === "login" ? "Don't have an account? " : "Already have an account? "}
           <span
             onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(null); }}
-            style={{ color: "#64748b", cursor: "pointer", textDecoration: "underline" }}
+            style={{ color: "var(--accent-green)", cursor: "pointer", textDecoration: "underline" }}
           >
             {mode === "login" ? "Sign up" : "Log in"}
           </span>
