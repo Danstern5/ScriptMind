@@ -76,6 +76,13 @@ export default function ScriptMind() {
       return saved ? JSON.parse(saved) : DEFAULT_SCRIPT_BIBLE;
     } catch { return DEFAULT_SCRIPT_BIBLE; }
   });
+  const [isThinkingMode, setIsThinkingMode] = useState(false);
+  const [aiPanelTab, setAiPanelTab] = useState("chat"); // "chat" | "bible" | "explore"
+  const toggleThinkingMode = (next) => {
+    setIsThinkingMode(next);
+    if (next && aiPanelTab === "chat") setAiPanelTab("bible");
+    if (!next) setAiPanelTab("chat");
+  };
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
@@ -513,7 +520,7 @@ export default function ScriptMind() {
       />
 
       {/* ── TOP BAR ── */}
-      <div className="flex items-center flex-shrink-0" style={{ height: 48, background: "var(--bg-canvas)", borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 16 }}>
+      <div className="flex items-center flex-shrink-0" style={{ position: "relative", height: 48, background: "var(--bg-canvas)", borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 16 }}>
         <div style={{
           fontFamily: "var(--font-serif)", fontSize: 17, letterSpacing: "0.02em",
           color: "var(--text-primary)",
@@ -523,6 +530,29 @@ export default function ScriptMind() {
         <div style={{ width: 1, height: 20, background: "var(--border-default)" }} />
         <div style={{ fontFamily: "var(--font-mono-ui)", fontSize: 12, color: "var(--text-tertiary)" }}>
           {scriptTitle}.fdx
+        </div>
+
+        <div className="flex items-center" style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", gap: 2 }}>
+          {["Writing Mode", "Thinking Mode"].map((label) => {
+            const active = label === "Writing Mode" ? !isThinkingMode : isThinkingMode;
+            return (
+              <button
+                key={label}
+                onClick={() => toggleThinkingMode(label === "Thinking Mode")}
+                style={{
+                  fontSize: 11.5, padding: "4px 14px", borderRadius: 4,
+                  background: active ? "rgba(0,0,0,0.07)" : "transparent",
+                  border: active ? "1px solid var(--border-default)" : "1px solid transparent",
+                  color: active ? "var(--text-primary)" : "var(--text-tertiary)",
+                  fontWeight: active ? 500 : 400,
+                  cursor: "pointer", fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
@@ -568,24 +598,36 @@ export default function ScriptMind() {
           insertElementAfter={insertElementAfter}
           numPages={numPages} wordCount={wordCount} lastSaved={lastSaved}
           onOpenScriptBible={() => setShowScriptBible(true)}
+          isThinkingMode={isThinkingMode}
         />
-        <EditorArea
-          elements={elements} activeElId={activeElId} setActiveElId={setActiveElId}
-          changeElementType={changeElementType} updateElement={updateElement}
-          handleKeyDown={handleKeyDown} sceneNumberMap={sceneNumberMap}
-          suggestions={suggestions} acIndex={acIndex} setAcIndex={setAcIndex}
-          acceptSuggestion={acceptSuggestion}
-          contentRef={contentRef} editorScrollRef={editorScrollRef}
-          numPages={numPages} currentPage={currentPage} currentScene={currentScene}
-          pageBreakMarkers={pageBreakMarkers}
-          titlePage={titlePage} setShowTitlePageEditor={setShowTitlePageEditor}
-        />
+        <div style={{
+          display: "flex", flexDirection: "column", overflow: "hidden",
+          flex: isThinkingMode ? "0 0 0px" : "1 1 0",
+          opacity: isThinkingMode ? 0 : 1,
+          pointerEvents: isThinkingMode ? "none" : "auto",
+          transition: "flex 0.35s ease, opacity 0.25s ease",
+          minWidth: 0,
+        }}>
+          <EditorArea
+            elements={elements} activeElId={activeElId} setActiveElId={setActiveElId}
+            changeElementType={changeElementType} updateElement={updateElement}
+            handleKeyDown={handleKeyDown} sceneNumberMap={sceneNumberMap}
+            suggestions={suggestions} acIndex={acIndex} setAcIndex={setAcIndex}
+            acceptSuggestion={acceptSuggestion}
+            contentRef={contentRef} editorScrollRef={editorScrollRef}
+            numPages={numPages} currentPage={currentPage} currentScene={currentScene}
+            pageBreakMarkers={pageBreakMarkers}
+            titlePage={titlePage} setShowTitlePageEditor={setShowTitlePageEditor}
+          />
+        </div>
         <AIPanel
           messages={messages} chatInput={chatInput} setChatInput={setChatInput}
           isStreaming={isStreaming} chatEndRef={chatEndRef}
           sendMessage={sendMessage} handleRewriteScene={handleRewriteScene}
           handleSuggestNext={handleSuggestNext}
           currentScene={currentScene} scenes={scenes} elements={elements}
+          isThinkingMode={isThinkingMode} aiPanelTab={aiPanelTab} setAiPanelTab={setAiPanelTab}
+          scriptBible={scriptBible} setScriptBible={setScriptBible}
         />
       </div>
 

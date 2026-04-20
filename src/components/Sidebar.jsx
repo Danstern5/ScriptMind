@@ -2,9 +2,36 @@ import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import { PlusIcon } from "./Icons";
 
-export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved, onOpenScriptBible }) {
+export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved, onOpenScriptBible, isThinkingMode }) {
   return (
-    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)" }}>
+    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: isThinkingMode ? 40 : 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)", transition: "width 0.35s ease" }}>
+      {isThinkingMode ? (
+        <div className="flex flex-col items-center" style={{ paddingTop: 12, gap: 6, overflowY: "auto", flex: 1 }}>
+          {scenes.map((scene, i) => {
+            const isActive = getCurrentSceneIndex(elements, activeElId) === i + 1;
+            return (
+              <div
+                key={scene.id}
+                onClick={() => jumpToScene(scene.id)}
+                title={stripHtml(scene.text) || "UNTITLED SCENE"}
+                style={{
+                  width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: isActive ? "rgba(74,222,128,0.15)" : "rgba(0,0,0,0.07)",
+                  color: isActive ? "var(--accent-green)" : "var(--text-tertiary)",
+                  fontSize: 9, fontFamily: "var(--font-mono-ui)", fontWeight: 600,
+                  border: isActive ? "1px solid rgba(74,222,128,0.4)" : "1px solid transparent",
+                  transition: "all 0.2s",
+                  flexShrink: 0,
+                }}
+              >
+                {i + 1}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+      <div className="flex flex-col flex-1" style={{ width: 220 }}>
       <div style={{ padding: "12px 14px 8px" }}>
         <div style={{ fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-label)", marginBottom: 8, fontFamily: "var(--font-mono-ui)" }}>
           Scenes
@@ -94,6 +121,8 @@ export default function Sidebar({ scenes, elements, activeElId, currentScene, ju
           ))}
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 }

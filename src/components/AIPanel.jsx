@@ -1,15 +1,21 @@
 import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import AIMessage from "./AIMessage";
+import ScriptBible from "./ScriptBible";
 import { SendIcon, SparkleIcon } from "./Icons";
+
+const TAB_LABELS = { bible: "Script Bible", explore: "Explore", chat: "Chat" };
 
 export default function AIPanel({
   messages, chatInput, setChatInput, isStreaming, chatEndRef,
   sendMessage, handleRewriteScene, handleSuggestNext,
   currentScene, scenes, elements,
+  isThinkingMode, aiPanelTab, setAiPanelTab,
+  scriptBible, setScriptBible,
 }) {
+  const tabs = isThinkingMode ? ["bible", "explore", "chat"] : ["chat"];
   return (
-    <div className="flex flex-col flex-shrink-0" style={{ width: 360, background: "var(--bg-panel)", borderLeft: "1px solid var(--border-default)" }}>
+    <div className="flex flex-col" style={{ flex: isThinkingMode ? "1 1 0" : "0 0 360px", minWidth: 0, background: "var(--bg-panel)", borderLeft: "1px solid var(--border-default)", transition: "flex 0.35s ease" }}>
       {/* Header */}
       <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 10 }}>
         <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #86efac, #4ade80)", animation: "ringPulse 2s ease-in-out infinite" }} />
@@ -17,11 +23,43 @@ export default function AIPanel({
           fontSize: 13, fontWeight: 500,
           color: "var(--text-primary)",
         }}>AI Collaborator</div>
-        <div className="ml-auto" style={{ fontSize: 11, padding: "3px 10px", borderRadius: 3, background: "rgba(0,0,0,0.06)", color: "var(--text-secondary)" }}>
-          Chat
+        <div className="flex items-center gap-1 ml-auto">
+          {tabs.map((tab) => {
+            const active = aiPanelTab === tab;
+            return (
+              <button
+                key={tab}
+                onClick={() => setAiPanelTab(tab)}
+                style={{
+                  fontSize: 11, padding: "3px 10px", borderRadius: 3,
+                  background: active ? "rgba(0,0,0,0.07)" : "transparent",
+                  color: active ? "var(--text-primary)" : "var(--text-tertiary)",
+                  fontWeight: active ? 500 : 400,
+                  border: "none", cursor: "pointer", fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
+      {aiPanelTab === "bible" && (
+        <div className="flex-1 overflow-y-auto">
+          <ScriptBible bible={scriptBible} onChange={setScriptBible} mode="thinking" />
+        </div>
+      )}
+
+      {aiPanelTab === "explore" && (
+        <div className="flex-1 overflow-y-auto flex items-center justify-center" style={{ padding: 32, color: "var(--text-tertiary)", fontSize: 13, textAlign: "center" }}>
+          Explore tab — scenarios coming in Phase 7
+        </div>
+      )}
+
+      {aiPanelTab === "chat" && (
+        <>
       {/* Messages */}
       <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
         {/* Context card */}
@@ -125,6 +163,8 @@ export default function AIPanel({
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
