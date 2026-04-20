@@ -2,6 +2,7 @@ import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import AIMessage from "./AIMessage";
 import ScriptBible from "./ScriptBible";
+import ScenarioCard from "./ScenarioCard";
 import { SendIcon, SparkleIcon } from "./Icons";
 
 const TAB_LABELS = { bible: "Script Bible", explore: "Explore", chat: "Chat" };
@@ -12,6 +13,8 @@ export default function AIPanel({
   currentScene, scenes, elements,
   isThinkingMode, aiPanelTab, setAiPanelTab,
   scriptBible, setScriptBible,
+  scenarios, isExploring, anchoredScenario, clearAnchor,
+  handleExplore, handleDiscuss, toggleScenarioImpact, toggleScenarioPreview,
 }) {
   const tabs = isThinkingMode ? ["bible", "explore", "chat"] : ["chat"];
   return (
@@ -53,13 +56,63 @@ export default function AIPanel({
       )}
 
       {aiPanelTab === "explore" && (
-        <div className="flex-1 overflow-y-auto flex items-center justify-center" style={{ padding: 32, color: "var(--text-tertiary)", fontSize: 13, textAlign: "center" }}>
-          Explore tab — scenarios coming in Phase 7
+        <div className="flex-1 overflow-y-auto flex flex-col" style={{ padding: 16, gap: 12 }}>
+          <button
+            onClick={handleExplore}
+            disabled={isExploring}
+            className="flex items-center justify-center gap-1.5"
+            style={{
+              fontSize: 12, padding: "8px 12px", borderRadius: 4,
+              border: "1px solid rgba(74,222,128,0.4)",
+              background: "rgba(74,222,128,0.08)",
+              color: "var(--accent-green)",
+              cursor: isExploring ? "default" : "pointer",
+              fontFamily: "inherit", fontWeight: 500,
+              opacity: isExploring ? 0.6 : 1,
+              transition: "all 0.2s",
+              flexShrink: 0,
+            }}
+          >
+            <SparkleIcon /> {isExploring ? "Analyzing…" : "Alternative Scene Analysis"}
+          </button>
+
+          {scenarios.length === 0 && !isExploring && (
+            <div style={{ padding: "24px 8px", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", lineHeight: 1.6 }}>
+              Click <strong>Alternative Scene Analysis</strong> to explore directions for this scene.
+            </div>
+          )}
+
+          {scenarios.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(280px, 1fr))", gap: 12, alignItems: "start" }}>
+              {scenarios.map((scenario, i) => (
+                <ScenarioCard
+                  key={i}
+                  scenario={scenario}
+                  index={i}
+                  onDiscuss={() => handleDiscuss(i)}
+                  onToggleImpact={() => toggleScenarioImpact(i)}
+                  onTogglePreview={() => toggleScenarioPreview(i)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {aiPanelTab === "chat" && (
         <>
+      {anchoredScenario !== null && scenarios[anchoredScenario] && (
+        <div className="flex items-center" style={{ margin: "12px 16px 0", padding: "6px 10px", borderRadius: 4, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.3)", fontSize: 11.5, color: "var(--accent-green)", gap: 8 }}>
+          <span style={{ flex: 1 }}>↳ Exploring: <strong style={{ fontWeight: 500 }}>"{scenarios[anchoredScenario].title}"</strong></span>
+          <button
+            onClick={clearAnchor}
+            style={{ background: "transparent", border: "none", color: "var(--accent-green)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}
+            aria-label="Clear anchored scenario"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* Messages */}
       <div className="flex-1 overflow-y-auto flex flex-col gap-3.5" style={{ padding: 16 }}>
         {/* Context card */}

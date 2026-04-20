@@ -18,6 +18,7 @@ import AIPanel from "./components/AIPanel";
 import SelectionToolbar from "./components/SelectionToolbar";
 import ScriptBible from "./components/ScriptBible";
 import { DEFAULT_SCRIPT_BIBLE } from "./utils/scriptBible";
+import { PLACEHOLDER_SCENARIOS } from "./utils/scenarios";
 
 // ─── Constants ───
 const DEFAULT_SCRIPT = {
@@ -82,6 +83,26 @@ export default function ScriptMind() {
     setIsThinkingMode(next);
     if (next && aiPanelTab === "chat") setAiPanelTab("bible");
     if (!next) setAiPanelTab("chat");
+  };
+  const [scenarios, setScenarios] = useState([]);
+  const [anchoredScenario, setAnchoredScenario] = useState(null);
+  const [isExploring, setIsExploring] = useState(false);
+  const handleExplore = () => {
+    setIsExploring(true);
+    setTimeout(() => {
+      setScenarios(PLACEHOLDER_SCENARIOS.map((s) => ({ ...s, impactOpen: false, previewOpen: false })));
+      setIsExploring(false);
+    }, 600);
+  };
+  const handleDiscuss = (idx) => {
+    setAnchoredScenario(idx);
+    setAiPanelTab("chat");
+  };
+  const toggleScenarioImpact = (idx) => {
+    setScenarios((prev) => prev.map((s, i) => (i === idx ? { ...s, impactOpen: !s.impactOpen } : s)));
+  };
+  const toggleScenarioPreview = (idx) => {
+    setScenarios((prev) => prev.map((s, i) => (i === idx ? { ...s, previewOpen: !s.previewOpen } : s)));
   };
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
@@ -628,6 +649,10 @@ export default function ScriptMind() {
           currentScene={currentScene} scenes={scenes} elements={elements}
           isThinkingMode={isThinkingMode} aiPanelTab={aiPanelTab} setAiPanelTab={setAiPanelTab}
           scriptBible={scriptBible} setScriptBible={setScriptBible}
+          scenarios={scenarios} isExploring={isExploring}
+          anchoredScenario={anchoredScenario} clearAnchor={() => setAnchoredScenario(null)}
+          handleExplore={handleExplore} handleDiscuss={handleDiscuss}
+          toggleScenarioImpact={toggleScenarioImpact} toggleScenarioPreview={toggleScenarioPreview}
         />
       </div>
 
