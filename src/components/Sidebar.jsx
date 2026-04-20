@@ -2,7 +2,7 @@ import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import { PlusIcon } from "./Icons";
 
-export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved }) {
+export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved, onOpenScriptBible }) {
   return (
     <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)" }}>
       <div style={{ padding: "12px 14px 8px" }}>
@@ -64,18 +64,35 @@ export default function Sidebar({ scenes, elements, activeElId, currentScene, ju
         </button>
       </div>
 
-      <div className="mt-auto" style={{ padding: 12, borderTop: "1px solid var(--border-default)" }}>
-        {[
-          ["Pages", `${numPages} / 110`],
-          ["Words", wordCount.toLocaleString()],
-          ["Scenes", scenes.length],
-          ["Last saved", lastSaved],
-        ].map(([label, value]) => (
-          <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "var(--text-label)", marginBottom: 2 }}>
-            <span>{label}</span>
-            <span style={{ color: "var(--text-secondary)" }}>{value}</span>
-          </div>
-        ))}
+      <div className="mt-auto" style={{ borderTop: "1px solid var(--border-default)" }}>
+        <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-default)" }}>
+          <button
+            onClick={onOpenScriptBible}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: 6,
+              fontSize: 11, color: "var(--text-label)", background: "transparent",
+              border: "1px solid var(--border-default)", borderRadius: 4, padding: "5px 8px",
+              cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent-green)"; e.currentTarget.style.borderColor = "rgba(74,222,128,0.4)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-label)"; e.currentTarget.style.borderColor = "var(--border-default)"; }}
+          >
+            <span style={{ fontSize: 13 }}>☰</span> Script Bible
+          </button>
+        </div>
+        <div style={{ padding: 12 }}>
+          {[
+            ["Pages", `${numPages} / 110`],
+            ["Words", wordCount.toLocaleString()],
+            ["Scenes", scenes.length],
+            ["Last saved", lastSaved],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between" style={{ fontSize: 11, color: "var(--text-label)", marginBottom: 2 }}>
+              <span>{label}</span>
+              <span style={{ color: "var(--text-secondary)" }}>{value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

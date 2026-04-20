@@ -16,6 +16,8 @@ import Sidebar from "./components/Sidebar";
 import EditorArea from "./components/EditorArea";
 import AIPanel from "./components/AIPanel";
 import SelectionToolbar from "./components/SelectionToolbar";
+import ScriptBible from "./components/ScriptBible";
+import { DEFAULT_SCRIPT_BIBLE } from "./utils/scriptBible";
 
 // ─── Constants ───
 const DEFAULT_SCRIPT = {
@@ -67,6 +69,13 @@ export default function ScriptMind() {
   });
   const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
   const [toolbarSelection, setToolbarSelection] = useState(null); // { text, rect } | null
+  const [showScriptBible, setShowScriptBible] = useState(false);
+  const [scriptBible, setScriptBible] = useState(() => {
+    try {
+      const saved = localStorage.getItem("scriptmind_bible");
+      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT_BIBLE;
+    } catch { return DEFAULT_SCRIPT_BIBLE; }
+  });
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
@@ -104,11 +113,12 @@ export default function ScriptMind() {
         localStorage.setItem("scriptmind_elements", JSON.stringify(elements));
         localStorage.setItem("scriptmind_title", scriptTitle);
         localStorage.setItem("scriptmind_titlepage", JSON.stringify(titlePage));
+        localStorage.setItem("scriptmind_bible", JSON.stringify(scriptBible));
         setLastSaved("just now");
       } catch { /* storage full — silent fail */ }
     }, 500); // debounce 500ms
     return () => clearTimeout(timeout);
-  }, [elements, scriptTitle, titlePage]);
+  }, [elements, scriptTitle, titlePage, scriptBible]);
 
   // Notifications
   const showNotification = (text) => {
@@ -352,7 +362,10 @@ export default function ScriptMind() {
     };
 
     const handleKey = (e) => {
-      if (e.key === "Escape") setToolbarSelection(null);
+      if (e.key === "Escape") {
+        setToolbarSelection(null);
+        setShowScriptBible(false);
+      }
     };
 
     document.addEventListener("mouseup", handleMouseUp);
@@ -393,6 +406,37 @@ export default function ScriptMind() {
 
       {/* Floating selection toolbar (editor text selection) */}
       <SelectionToolbar selection={toolbarSelection} onAction={handleSelectionAction} />
+
+      {/* Script Bible slide-over (Writing Mode) */}
+      {showScriptBible && (
+        <>
+          <div
+            onClick={() => setShowScriptBible(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.15)" }}
+          />
+          <div style={{
+            position: "fixed", top: 48, left: 220, bottom: 24, width: 560, zIndex: 91,
+            background: "var(--bg-surface)", borderRight: "1px solid var(--border-default)",
+            boxShadow: "4px 0 24px rgba(0,0,0,0.1)",
+            display: "flex", flexDirection: "column",
+            animation: "slideInLeft 0.2s ease",
+          }}>
+            <style>{`@keyframes slideInLeft { from { opacity:0; transform:translateX(-12px); } to { opacity:1; transform:translateX(0); } }`}</style>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border-default)", flexShrink: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>Script Bible</div>
+              <button
+                onClick={() => setShowScriptBible(false)}
+                style={{ background: "none", border: "none", color: "var(--text-label)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-secondary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-label)"; }}
+              >×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              <ScriptBible bible={scriptBible} onChange={setScriptBible} mode="writing" />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Title Page Editor Modal */}
       {showTitlePageEditor && (
@@ -523,6 +567,7 @@ export default function ScriptMind() {
           currentScene={currentScene} jumpToScene={jumpToScene}
           insertElementAfter={insertElementAfter}
           numPages={numPages} wordCount={wordCount} lastSaved={lastSaved}
+          onOpenScriptBible={() => setShowScriptBible(true)}
         />
         <EditorArea
           elements={elements} activeElId={activeElId} setActiveElId={setActiveElId}

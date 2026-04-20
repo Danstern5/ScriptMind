@@ -39,7 +39,7 @@ src/
     AIPanel.jsx            # Chat header, messages, streaming indicator, input, quick actions
     AuthPage.jsx           # Login/signup page (email + password, mode toggle)
     ScenarioCard.jsx       # Presentational card for "what-if" scene scenarios (not yet wired — Phase 7)
-    ScriptBible.jsx        # Two-mode bible editor ("writing" modal / "thinking" split col) (not yet wired — Phases 5–6)
+    ScriptBible.jsx        # Two-mode bible editor — `mode="writing"` used in Phase 5 modal; `mode="thinking"` (split col) wires up in Phase 6
     SelectionToolbar.jsx   # Floating dark chip shown on editor text selection (Alternatives / Consistency Check / Discuss → `useAIChat.sendMessage(prompt, quote)`)
   contexts/
     AuthContext.jsx        # AuthProvider — user/token/loading state, login/signup/logout methods
@@ -58,6 +58,7 @@ src/
     export.js       # elementsToFDX, elementsToFountain
     import.js       # parseFountain(text, fallbackElements), parseFDX(xmlText, fallbackElements)
     pdfExport.js    # exportPDF(elements, titlePage, scriptTitle) — jsPDF-based PDF generation
+    scriptBible.js  # DEFAULT_SCRIPT_BIBLE shape (logline/genre/themes/synopsis/actBreakdown/characters/worldFacts)
 ```
 
 ## Backend File Structure
@@ -127,20 +128,21 @@ Main `ScriptMind` component: 16 useState hooks, multiple useEffect hooks, all ev
 
 ## Port In Progress (`port-redesign` branch)
 
-The `port-redesign` branch is incrementally bringing partner Dan's `origin/Redesign416-dan` features into the refactored main. Phases 0–4 complete; Phases 5–8 remaining. Full plan: `PORT_REDESIGN_PLAN.md`.
+The `port-redesign` branch is incrementally bringing partner Dan's `origin/Redesign416-dan` features into the refactored main. Phases 0–5 complete; Phases 6–8 remaining. Full plan: `PORT_REDESIGN_PLAN.md`.
 
 - ✅ Phase 0+1 — CSS tokens + theme migration across existing shell
 - ✅ Phase 2 — `AIMessage` `msg.quote` + `**bold**` markdown parsing
 - ✅ Phase 3 — `ScenarioCard`, `ScriptBible`, `SelectionToolbar` components added (not yet wired)
 - ✅ Phase 4 — `SelectionToolbar` wired: `toolbarSelection` state, editor-scoped mouseup/mousedown/Escape listeners, `handleSelectionAction` → `useAIChat.sendMessage(prompt, quote)` (optional `quote` arg carries to user msg as `msg.quote` and prepends to API content)
+- ✅ Phase 5 — Script Bible modal: `scriptBible` state persisted to `scriptmind_bible` localStorage key, `DEFAULT_SCRIPT_BIBLE` in `src/utils/scriptBible.js`, sidebar `☰ Script Bible` button opens a slide-over modal rendering `<ScriptBible mode="writing">` (backdrop + X + Escape dismiss)
 - ⬜ Phase 5 — Script Bible modal mode + localStorage persistence (key `scriptmind_bible_<scriptId>`)
 - ⬜ Phase 6 — Thinking Mode infrastructure (panel width animation + tab bar)
 - ⬜ Phase 7 — Explore tab + Scenario Cards
 - ⬜ Phase 8 — Cleanup & merge to `main`
 
-**Planned new utils (Phases 5/7):** `src/utils/scriptBible.js` (`DEFAULT_SCRIPT_BIBLE`), `src/utils/scenarios.js` (`PLACEHOLDER_SCENARIOS`).
+**Planned new utils (Phase 7):** `src/utils/scenarios.js` (`PLACEHOLDER_SCENARIOS`).
 
-**Planned ScriptMind.jsx additions (Phases 5–7):** state — `isThinkingMode`, `aiPanelTab` (`"chat" | "bible" | "explore"`), `scriptBible`, `scenarios`, `anchoredScenario`, `isExploring`, `showScriptBible`; handlers — `handleExplore`, `handleDiscuss`, `toggleScenarioImpact/Preview`.
+**Planned ScriptMind.jsx additions (Phases 6–7):** state — `isThinkingMode`, `aiPanelTab` (`"chat" | "bible" | "explore"`), `scenarios`, `anchoredScenario`, `isExploring`; handlers — `handleExplore`, `handleDiscuss`, `toggleScenarioImpact/Preview`.
 
 **Out of scope for this port:** Real AI for Script Bible "AI reading" fields and Explore scenario generation (placeholders ship now); backend persistence for `scriptBible` (localStorage only).
 

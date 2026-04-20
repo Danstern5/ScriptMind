@@ -7,7 +7,7 @@
 - ✅ **Phase 2** — AIMessage rethemed; `msg.quote` block + `**bold**` markdown parsing added
 - ✅ **Phase 3** — `ScenarioCard`, `ScriptBible`, `SelectionToolbar` dropped in (tokenized, not yet wired)
 - ✅ **Phase 4** — SelectionToolbar wired: `toolbarSelection` state + editor-scoped mouseup/mousedown/Escape listeners; `handleSelectionAction` calls `sendMessage(prompt, quote)`; `useAIChat.sendMessage` extended with optional `quote` param
-- ⬜ Phase 5 — Script Bible (modal mode)
+- ✅ **Phase 5** — Script Bible modal: `scriptBible` state + `showScriptBible` toggle, localStorage persistence under `scriptmind_bible`, `DEFAULT_SCRIPT_BIBLE` in `src/utils/scriptBible.js` (PROTAGONIST/ANTAGONIST templates, empty worldFacts), slide-over modal with backdrop dismissal, sidebar button, Escape key closes
 - ⬜ Phase 6 — Thinking Mode infrastructure (write fresh)
 - ⬜ Phase 7 — Explore tab / Scenario Cards (write fresh)
 - ⬜ Phase 8 — Cleanup & merge
