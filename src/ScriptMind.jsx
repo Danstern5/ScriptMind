@@ -15,6 +15,7 @@ import FileMenu from "./components/FileMenu";
 import Sidebar from "./components/Sidebar";
 import EditorArea from "./components/EditorArea";
 import AIPanel from "./components/AIPanel";
+import SelectionToolbar from "./components/SelectionToolbar";
 
 // ─── Constants ───
 const DEFAULT_SCRIPT = {
@@ -65,6 +66,7 @@ export default function ScriptMind() {
     } catch { return DEFAULT_TITLE_PAGE; }
   });
   const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
+  const [toolbarSelection, setToolbarSelection] = useState(null); // { text, rect } | null
 
   const [acIndex, setAcIndex] = useState(-1); // autocomplete selected index
 
@@ -306,6 +308,63 @@ export default function ScriptMind() {
     return () => document.removeEventListener("click", handler);
   }, [fileMenuOpen]);
 
+  // Selection toolbar action handler
+  const handleSelectionAction = useCallback((actionType, selectedText) => {
+    const trimmed = selectedText?.trim();
+    setToolbarSelection(null);
+    if (!trimmed) return;
+    const promptMap = {
+      alternatives: "Give me 2–3 alternative phrasings for this line or section. Keep them in the same voice and tone.",
+      consistency: "Check this against the rest of the script for logical consistency and character voice. Flag anything that feels off.",
+      discuss: "Let's discuss this moment. What's working, what could be stronger, and what choices am I making here?",
+    };
+    sendMessage(promptMap[actionType] || promptMap.discuss, trimmed);
+  }, [sendMessage]);
+
+  // Selection detection — scoped to the editor scroll container
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setTimeout(() => {
+        const editorEl = editorScrollRef.current;
+        if (!editorEl) return;
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) { setToolbarSelection(null); return; }
+        const text = sel.toString();
+        if (!text.trim()) { setToolbarSelection(null); return; }
+        try {
+          const range = sel.getRangeAt(0);
+          if (!editorEl.contains(range.commonAncestorContainer)) {
+            setToolbarSelection(null);
+            return;
+          }
+          const rect = range.getBoundingClientRect();
+          setToolbarSelection({ text, rect });
+        } catch {
+          setToolbarSelection(null);
+        }
+      }, 10);
+    };
+
+    const handleMouseDown = (e) => {
+      if (e.target.closest?.("[data-selection-toolbar]")) return;
+      const editorEl = editorScrollRef.current;
+      if (editorEl && !editorEl.contains(e.target)) setToolbarSelection(null);
+    };
+
+    const handleKey = (e) => {
+      if (e.key === "Escape") setToolbarSelection(null);
+    };
+
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, []);
+
   return (
     <div
       className="flex flex-col h-screen w-full overflow-hidden"
@@ -331,6 +390,9 @@ export default function ScriptMind() {
         ::-webkit-scrollbar-thumb:hover { background: #aaaaaa; }
         ::selection { background: rgba(74,222,128,0.25); }
       `}</style>
+
+      {/* Floating selection toolbar (editor text selection) */}
+      <SelectionToolbar selection={toolbarSelection} onAction={handleSelectionAction} />
 
       {/* Title Page Editor Modal */}
       {showTitlePageEditor && (

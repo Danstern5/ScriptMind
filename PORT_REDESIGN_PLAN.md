@@ -4,9 +4,9 @@
 
 - ✅ **Phase 0** — Branch created, CSS tokens defined, App.jsx auth wiring fixed, bcrypt pinned
 - ✅ **Phase 1** — All 9 files rethemed (Sidebar, EditorArea, AIPanel chat mode, ContextMenu, FileMenu, RenameCharacterModal, TitlePageEditor, AuthPage, ScriptMind shell)
-- ⬜ Phase 2 — AIMessage feature port (`msg.quote` + markdown)
-- ⬜ Phase 3 — Drop in new components (ScenarioCard, ScriptBible, SelectionToolbar)
-- ⬜ Phase 4 — Selection Toolbar wiring (write fresh)
+- ✅ **Phase 2** — AIMessage rethemed; `msg.quote` block + `**bold**` markdown parsing added
+- ✅ **Phase 3** — `ScenarioCard`, `ScriptBible`, `SelectionToolbar` dropped in (tokenized, not yet wired)
+- ✅ **Phase 4** — SelectionToolbar wired: `toolbarSelection` state + editor-scoped mouseup/mousedown/Escape listeners; `handleSelectionAction` calls `sendMessage(prompt, quote)`; `useAIChat.sendMessage` extended with optional `quote` param
 - ⬜ Phase 5 — Script Bible (modal mode)
 - ⬜ Phase 6 — Thinking Mode infrastructure (write fresh)
 - ⬜ Phase 7 — Explore tab / Scenario Cards (write fresh)

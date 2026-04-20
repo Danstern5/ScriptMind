@@ -14,13 +14,20 @@ export default function useAIChat(elements, currentScene, activeElId) {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, quote = null) => {
     if (!text.trim() || isStreaming) return;
 
-    const userMsg = { id: msgId(), role: "user", text: text.trim() };
+    const trimmedQuote = quote?.trim() || null;
+    const userMsg = trimmedQuote
+      ? { id: msgId(), role: "user", text: text.trim(), quote: trimmedQuote }
+      : { id: msgId(), role: "user", text: text.trim() };
     setMessages((prev) => [...prev, userMsg]);
     setChatInput("");
     setIsStreaming(true);
+
+    const apiContent = trimmedQuote
+      ? `Selected from the screenplay:\n"${trimmedQuote}"\n\n${text.trim()}`
+      : text.trim();
 
     // Build script context
     const scriptText = elements.map((el) => {
@@ -48,9 +55,9 @@ Respond concisely (2-4 short paragraphs max). Be specific to this screenplay —
           messages: [
             ...messages.filter(m => m.role).map(m => ({
               role: m.role === "assistant" ? "assistant" : "user",
-              content: m.text
+              content: m.quote ? `Selected from the screenplay:\n"${m.quote}"\n\n${m.text}` : m.text
             })),
-            { role: "user", content: text.trim() }
+            { role: "user", content: apiContent }
           ],
         }),
       });
