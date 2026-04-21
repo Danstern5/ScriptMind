@@ -29,10 +29,17 @@ __pycache__/
 backend/env/
 backend/venv/
 backend/.venv/
+backend/build/
+backend/dist/
 
 # Playwright MCP artifacts (debugging only)
 .playwright-mcp/
 phase*-*.png
+screenshot*.png
+*.screenshot.png
+
+# Claude Code local config
+.claude/
 
 # Editor directories and files
 .vscode/*
