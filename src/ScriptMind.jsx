@@ -8,6 +8,7 @@ import useAIChat from "./hooks/useAIChat";
 import usePageLayout from "./hooks/usePageLayout";
 import useFileOperations from "./hooks/useFileOperations";
 import useAuth from "./hooks/useAuth";
+import useScriptPersistence from "./hooks/useScriptPersistence";
 import ContextMenu from "./components/ContextMenu";
 import TitlePageEditor from "./components/TitlePageEditor";
 import RenameCharacterModal from "./components/RenameCharacterModal";
@@ -40,34 +41,15 @@ const DEFAULT_TITLE_PAGE = {
 
 // ─── Main App ───
 export default function ScriptMind() {
-  const { logout } = useAuth();
-  const [elements, setElements] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_elements");
-      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
-    } catch { return DEFAULT_SCRIPT.elements; }
-  });
-  const [activeElId, setActiveElId] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_elements");
-      const els = saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
-      return els[0]?.id || "el-1";
-    } catch { return "el-1"; }
-  });
+  const { token, logout } = useAuth();
+  const [elements, setElements] = useState(DEFAULT_SCRIPT.elements);
+  const [activeElId, setActiveElId] = useState("el-1");
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
-  const [lastSaved, setLastSaved] = useState("just now");
-  const [scriptTitle, setScriptTitle] = useState(() => {
-    return localStorage.getItem("scriptmind_title") || "untitled_screenplay";
-  });
+  const [scriptTitle, setScriptTitle] = useState(DEFAULT_SCRIPT.title);
   const [notification, setNotification] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [renameModal, setRenameModal] = useState(null); // { oldName, newName }
-  const [titlePage, setTitlePage] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_titlepage");
-      return saved ? JSON.parse(saved) : DEFAULT_TITLE_PAGE;
-    } catch { return DEFAULT_TITLE_PAGE; }
-  });
+  const [titlePage, setTitlePage] = useState(DEFAULT_TITLE_PAGE);
   const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
   const [toolbarSelection, setToolbarSelection] = useState(null); // { text, rect } | null
   const [showScriptBible, setShowScriptBible] = useState(false);
@@ -134,19 +116,25 @@ export default function ScriptMind() {
 
   const { contentRef, numPages, currentPage, pageBreakMarkers } = usePageLayout(elements, activeElId, editorScrollRef);
 
-  // Auto-save to localStorage
+  const { isLoaded, lastSaved } = useScriptPersistence({
+    token,
+    elements, setElements, setActiveElId,
+    scriptTitle, setScriptTitle,
+    titlePage, setTitlePage,
+    defaultElements: DEFAULT_SCRIPT.elements,
+    defaultTitle: DEFAULT_SCRIPT.title,
+    defaultTitlePage: DEFAULT_TITLE_PAGE,
+    onUnauthorized: logout,
+  });
+
+  // Persist scriptBible to localStorage (backend persistence deferred)
   useEffect(() => {
     const timeout = setTimeout(() => {
-      try {
-        localStorage.setItem("scriptmind_elements", JSON.stringify(elements));
-        localStorage.setItem("scriptmind_title", scriptTitle);
-        localStorage.setItem("scriptmind_titlepage", JSON.stringify(titlePage));
-        localStorage.setItem("scriptmind_bible", JSON.stringify(scriptBible));
-        setLastSaved("just now");
-      } catch { /* storage full — silent fail */ }
-    }, 500); // debounce 500ms
+      try { localStorage.setItem("scriptmind_bible", JSON.stringify(scriptBible)); }
+      catch { /* storage full — silent fail */ }
+    }, 500);
     return () => clearTimeout(timeout);
-  }, [elements, scriptTitle, titlePage, scriptBible]);
+  }, [scriptBible]);
 
   // Notifications
   const showNotification = (text) => {
@@ -405,6 +393,17 @@ export default function ScriptMind() {
       document.removeEventListener("keydown", handleKey);
     };
   }, []);
+
+  if (!isLoaded) {
+    return (
+      <div
+        className="flex items-center justify-center h-screen w-full"
+        style={{ background: "var(--bg-canvas)", color: "var(--text-tertiary)", fontFamily: "var(--font-sans)", fontSize: 13 }}
+      >
+        Loading script…
+      </div>
+    );
+  }
 
   return (
     <div

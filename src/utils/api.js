@@ -4,15 +4,21 @@ async function handleResponse(response) {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const message = data?.detail || `Request failed (${response.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
 
-export async function apiPost(path, body) {
+function authHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function apiPost(path, body, token) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
   return handleResponse(response);
@@ -20,7 +26,24 @@ export async function apiPost(path, body) {
 
 export async function apiGet(path, token) {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse(response);
+}
+
+export async function apiPut(path, body, token) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse(response);
+}
+
+export async function apiDelete(path, token) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(token) },
   });
   return handleResponse(response);
 }
