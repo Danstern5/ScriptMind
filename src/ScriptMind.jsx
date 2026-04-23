@@ -112,7 +112,7 @@ export default function ScriptMind() {
     sendMessage,
     handleRewriteScene,
     handleSuggestNext,
-  } = useAIChat(elements, currentScene, activeElId);
+  } = useAIChat(elements, currentScene, activeElId, token);
 
   const { contentRef, numPages, currentPage, pageBreakMarkers } = usePageLayout(elements, activeElId, editorScrollRef);
 

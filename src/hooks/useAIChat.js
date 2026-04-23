@@ -2,14 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { msgId } from "../utils/ids";
 import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
+import { apiStreamPost } from "../utils/api";
 
-export default function useAIChat(elements, currentScene, activeElId) {
+export default function useAIChat(elements, currentScene, activeElId, token) {
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const chatEndRef = useRef(null);
 
-  // Scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -29,52 +29,59 @@ export default function useAIChat(elements, currentScene, activeElId) {
       ? `Selected from the screenplay:\n"${trimmedQuote}"\n\n${text.trim()}`
       : text.trim();
 
-    // Build script context
-    const scriptText = elements.map((el) => {
-      const prefix = el.type === "scene-heading" ? "\n" : el.type === "character" ? "\n" : "";
-      return prefix + stripHtml(el.text);
-    }).join("\n");
+    const history = messages
+      .filter((m) => m.role)
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.quote
+          ? `Selected from the screenplay:\n"${m.quote}"\n\n${m.text}`
+          : m.text,
+      }));
 
-    const currentSceneText = `Scene ${currentScene}`;
+    const assistantId = msgId();
+    let appendedAssistant = false;
+
+    const onEvent = (event) => {
+      if (event.type === "token") {
+        if (!appendedAssistant) {
+          appendedAssistant = true;
+          setMessages((prev) => [...prev, { id: assistantId, role: "assistant", text: event.text }]);
+        } else {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + event.text } : m)),
+          );
+        }
+      } else if (event.type === "error") {
+        if (!appendedAssistant) {
+          appendedAssistant = true;
+          setMessages((prev) => [
+            ...prev,
+            { id: assistantId, role: "assistant", text: `(AI error: ${event.message})` },
+          ]);
+        }
+      }
+    };
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are ScriptMind, an expert AI screenwriting collaborator. You have access to the writer's full screenplay and are helping them craft their story. Be specific to THEIR script — reference their characters, scenes, and dialogue by name. Be concise, insightful, and practical. Use a warm but professional tone. Format with bullet points (•) sparingly. Use *asterisks* for emphasis on key terms.
-
-CURRENT SCREENPLAY:
-${scriptText}
-
-CURRENT POSITION: ${currentSceneText}
-
-Respond concisely (2-4 short paragraphs max). Be specific to this screenplay — mention character names, scene details, etc.`,
-          messages: [
-            ...messages.filter(m => m.role).map(m => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.quote ? `Selected from the screenplay:\n"${m.quote}"\n\n${m.text}` : m.text
-            })),
-            { role: "user", content: apiContent }
-          ],
-        }),
-      });
-
-      const data = await response.json();
-      const aiText = data.content?.map(b => b.text || "").join("") || "I'd be happy to help with your screenplay. Could you tell me more about what you're working on?";
-
-      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", text: aiText }]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
+      await apiStreamPost(
+        "/api/ai/chat",
         {
-          id: msgId(),
-          role: "assistant",
-          text: "I'm having trouble connecting right now. In the meantime, I can see you're working on a compelling scene between Morgan and Cole. The tension in their dialogue is strong — Morgan's short responses are doing a lot of heavy lifting. What specifically would you like help with?",
+          messages: [...history, { role: "user", content: apiContent }],
+          script_context: {
+            elements: elements.map((el) => ({ type: el.type, text: stripHtml(el.text) })),
+            current_scene: currentScene,
+          },
         },
-      ]);
+        token,
+        onEvent,
+      );
+    } catch {
+      if (!appendedAssistant) {
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantId, role: "assistant", text: "I'm having trouble connecting right now. Please try again." },
+        ]);
+      }
     }
     setIsStreaming(false);
   };
