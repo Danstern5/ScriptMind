@@ -13,7 +13,7 @@ export default function AIPanel({
   currentScene, scenes, elements,
   isThinkingMode, aiPanelTab, setAiPanelTab,
   scriptBible, setScriptBible,
-  scenarios, isExploring, anchoredScenario, clearAnchor,
+  scenarios, isExploring, exploreError, anchoredScenario, clearAnchor,
   handleExplore, handleDiscuss, toggleScenarioImpact, toggleScenarioPreview,
 }) {
   const tabs = isThinkingMode ? ["bible", "explore", "chat"] : ["chat"];
@@ -76,9 +76,19 @@ export default function AIPanel({
             <SparkleIcon /> {isExploring ? "Analyzing…" : "Alternative Scene Analysis"}
           </button>
 
-          {scenarios.length === 0 && !isExploring && (
+          {scenarios.length === 0 && !isExploring && !exploreError && (
             <div style={{ padding: "24px 8px", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", lineHeight: 1.6 }}>
               Click <strong>Alternative Scene Analysis</strong> to explore directions for this scene.
+            </div>
+          )}
+
+          {exploreError && !isExploring && (
+            <div style={{
+              padding: "12px 14px", fontSize: 12, lineHeight: 1.5,
+              color: "#8a3a3a", background: "rgba(185,74,74,0.05)",
+              border: "1px solid rgba(185,74,74,0.25)", borderRadius: 6,
+            }}>
+              {exploreError}
             </div>
           )}
 

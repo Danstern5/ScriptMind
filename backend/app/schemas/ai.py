@@ -21,3 +21,24 @@ class ScriptContext(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     script_context: ScriptContext
+
+
+class ExploreRequest(BaseModel):
+    script_context: ScriptContext
+
+
+class ScenarioImpact(BaseModel):
+    tone: str
+    character: str
+    plot: str
+
+
+class Scenario(BaseModel):
+    title: str
+    description: str
+    impact: ScenarioImpact
+    preview: str
+
+
+class ExploreResponse(BaseModel):
+    scenarios: list[Scenario]

@@ -9,4 +9,4 @@ python-jose[cryptography]
 passlib[bcrypt]
 bcrypt<4.1
 python-multipart
-anthropic
+anthropic>=0.40.0

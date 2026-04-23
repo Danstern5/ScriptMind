@@ -19,7 +19,7 @@ import AIPanel from "./components/AIPanel";
 import SelectionToolbar from "./components/SelectionToolbar";
 import ScriptBible from "./components/ScriptBible";
 import { DEFAULT_SCRIPT_BIBLE } from "./utils/scriptBible";
-import { PLACEHOLDER_SCENARIOS } from "./utils/scenarios";
+import { apiPost } from "./utils/api";
 
 // ─── Constants ───
 const DEFAULT_SCRIPT = {
@@ -69,12 +69,29 @@ export default function ScriptMind() {
   const [scenarios, setScenarios] = useState([]);
   const [anchoredScenario, setAnchoredScenario] = useState(null);
   const [isExploring, setIsExploring] = useState(false);
-  const handleExplore = () => {
+  const [exploreError, setExploreError] = useState(null);
+  const handleExplore = async () => {
     setIsExploring(true);
-    setTimeout(() => {
-      setScenarios(PLACEHOLDER_SCENARIOS.map((s) => ({ ...s, impactOpen: false, previewOpen: false })));
+    setExploreError(null);
+    setAnchoredScenario(null);
+    try {
+      const data = await apiPost(
+        "/api/ai/explore",
+        {
+          script_context: {
+            elements: elements.map((el) => ({ type: el.type, text: stripHtml(el.text) })),
+            current_scene: currentScene,
+          },
+        },
+        token,
+      );
+      setScenarios(data.scenarios.map((s) => ({ ...s, impactOpen: false, previewOpen: false })));
+    } catch (err) {
+      setScenarios([]);
+      setExploreError(err.message || "Couldn't generate scenarios. Please try again.");
+    } finally {
       setIsExploring(false);
-    }, 600);
+    }
   };
   const handleDiscuss = (idx) => {
     setAnchoredScenario(idx);
@@ -648,7 +665,7 @@ export default function ScriptMind() {
           currentScene={currentScene} scenes={scenes} elements={elements}
           isThinkingMode={isThinkingMode} aiPanelTab={aiPanelTab} setAiPanelTab={setAiPanelTab}
           scriptBible={scriptBible} setScriptBible={setScriptBible}
-          scenarios={scenarios} isExploring={isExploring}
+          scenarios={scenarios} isExploring={isExploring} exploreError={exploreError}
           anchoredScenario={anchoredScenario} clearAnchor={() => setAnchoredScenario(null)}
           handleExplore={handleExplore} handleDiscuss={handleDiscuss}
           toggleScenarioImpact={toggleScenarioImpact} toggleScenarioPreview={toggleScenarioPreview}

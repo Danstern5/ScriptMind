@@ -41,6 +41,13 @@ export default function useAIChat(elements, currentScene, activeElId, token) {
     const assistantId = msgId();
     let appendedAssistant = false;
 
+    const appendError = (message) => {
+      setMessages((prev) => [
+        ...prev,
+        { id: msgId(), role: "assistant", text: message, isError: true },
+      ]);
+    };
+
     const onEvent = (event) => {
       if (event.type === "token") {
         if (!appendedAssistant) {
@@ -52,13 +59,7 @@ export default function useAIChat(elements, currentScene, activeElId, token) {
           );
         }
       } else if (event.type === "error") {
-        if (!appendedAssistant) {
-          appendedAssistant = true;
-          setMessages((prev) => [
-            ...prev,
-            { id: assistantId, role: "assistant", text: `(AI error: ${event.message})` },
-          ]);
-        }
+        appendError(event.message || "Something went wrong talking to the AI. Please try again.");
       }
     };
 
@@ -76,12 +77,7 @@ export default function useAIChat(elements, currentScene, activeElId, token) {
         onEvent,
       );
     } catch {
-      if (!appendedAssistant) {
-        setMessages((prev) => [
-          ...prev,
-          { id: assistantId, role: "assistant", text: "I'm having trouble connecting right now. Please try again." },
-        ]);
-      }
+      appendError("I'm having trouble connecting right now. Please try again.");
     }
     setIsStreaming(false);
   };

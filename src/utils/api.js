@@ -3,9 +3,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 async function handleResponse(response) {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = data?.detail || `Request failed (${response.status})`;
+    const detail = data?.detail;
+    const message =
+      (detail && typeof detail === "object" && detail.message) ||
+      (typeof detail === "string" && detail) ||
+      `Request failed (${response.status})`;
     const error = new Error(message);
     error.status = response.status;
+    error.code = detail && typeof detail === "object" ? detail.code : undefined;
     throw error;
   }
   return data;

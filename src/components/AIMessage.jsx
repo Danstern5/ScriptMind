@@ -26,15 +26,16 @@ export default function AIMessage({ msg }) {
         {isAI ? "S" : "Y"}
       </div>
       <div className="flex-1 min-w-0">
-        <div style={{ fontSize: 10, color: "var(--text-label)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          {isAI ? "ScriptMind" : "You"}
+        <div style={{ fontSize: 10, color: msg.isError ? "#b94a4a" : "var(--text-label)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          {msg.isError ? "Error" : isAI ? "ScriptMind" : "You"}
         </div>
         <div
           style={{
             fontSize: 12.5, lineHeight: 1.6,
-            background: isAI ? "var(--bg-canvas)" : "rgba(0,0,0,0.04)",
-            border: `1px solid ${isAI ? "var(--border-default)" : "rgba(0,0,0,0.1)"}`,
-            borderRadius: 6, padding: "10px 12px", color: "var(--text-primary)",
+            background: msg.isError ? "rgba(185,74,74,0.05)" : isAI ? "var(--bg-canvas)" : "rgba(0,0,0,0.04)",
+            border: `1px solid ${msg.isError ? "rgba(185,74,74,0.25)" : isAI ? "var(--border-default)" : "rgba(0,0,0,0.1)"}`,
+            borderRadius: 6, padding: "10px 12px",
+            color: msg.isError ? "#8a3a3a" : "var(--text-primary)",
           }}
         >
           {msg.quote && (
