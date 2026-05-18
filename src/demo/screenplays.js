@@ -1,0 +1,103 @@
+const screenplayShared = [
+
+  // ─── SCENE 1: INT. MAYA'S APARTMENT — MORNING ───────────────────────────
+
+  { id: 'demo-s1-01', type: 'scene-heading', text: "INT. MAYA'S APARTMENT — MORNING" },
+  { id: 'demo-s1-02', type: 'action',        text: "The apartment is small and carefully arranged — a whiteboard covers one wall, dense with diagrams and sticky notes. MAYA CHEN (28) stands at the kitchen counter in a blazer she's clearly just put on, holding a coffee cup she isn't drinking." },
+  { id: 'demo-s1-03', type: 'character',     text: 'JAMIE' },
+  { id: 'demo-s1-04', type: 'dialogue',      text: "You're going to walk in there and they're going to ask you who the customer is. What do you say?" },
+  { id: 'demo-s1-05', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s1-06', type: 'dialogue',      text: "The person who has a closet full of clothes and nothing to wear." },
+  { id: 'demo-s1-07', type: 'character',     text: 'JAMIE' },
+  { id: 'demo-s1-08', type: 'dialogue',      text: "Good. Now say it like you've said it a thousand times." },
+  { id: 'demo-s1-09', type: 'action',        text: "Maya sets down the coffee. Rolls her shoulders." },
+  { id: 'demo-s1-10', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s1-11', type: 'dialogue',      text: "The person who has a closet full of clothes and nothing to wear." },
+  { id: 'demo-s1-12', type: 'character',     text: 'JAMIE' },
+  { id: 'demo-s1-13', type: 'dialogue',      text: "Better. One more thing." },
+  { id: 'demo-s1-14', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s1-15', type: 'parenthetical', text: '(bracing)' },
+  { id: 'demo-s1-16', type: 'dialogue',      text: "What?" },
+  { id: 'demo-s1-17', type: 'character',     text: 'JAMIE' },
+  { id: 'demo-s1-18', type: 'dialogue',      text: "Stop trying to convince him. Just tell him the truth." },
+  { id: 'demo-s1-19', type: 'action',        text: "A beat. Maya nods — not enthusiastically, but she's taking it in." },
+  { id: 'demo-s1-20', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s1-21', type: 'dialogue',      text: "And if the truth isn't enough?" },
+  { id: 'demo-s1-22', type: 'character',     text: 'JAMIE' },
+  { id: 'demo-s1-23', type: 'dialogue',      text: "Then we'll figure out what we missed." },
+  { id: 'demo-s1-24', type: 'action',        text: "Jamie squeezes her shoulder. Maya grabs her bag and goes." },
+
+  // ─── SCENE 2: INT. CRESCENT VENTURES — CONFERENCE ROOM — DAY ────────────
+
+  { id: 'demo-s2-01', type: 'scene-heading', text: 'INT. CRESCENT VENTURES — CONFERENCE ROOM — DAY' },
+  { id: 'demo-s2-02', type: 'action',        text: "Glass walls. A long table. NOLAN REEVES (45) stands when Maya enters — practiced warmth, expensive watch." },
+  { id: 'demo-s2-03', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-s2-04', type: 'dialogue',      text: "Maya. Good to finally put a face to the deck." },
+  { id: 'demo-s2-05', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s2-06', type: 'dialogue',      text: "Thanks for making the time." },
+  { id: 'demo-s2-07', type: 'action',        text: "They sit. Nolan pours water for both of them without asking." },
+  { id: 'demo-s2-08', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-s2-09', type: 'dialogue',      text: "Walk me through it." },
+  { id: 'demo-s2-10', type: 'action',        text: "Maya takes a breath. Then she begins." },
+  { id: 'demo-s2-11', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s2-12', type: 'dialogue',      text: "We all know the problem. You open your closet and you have nothing to wear. Not because you don't have clothes — you have plenty of clothes. You just can't see them anymore." },
+  { id: 'demo-s2-13', type: 'action',        text: "She pulls up her phone. Shows him the app." },
+  { id: 'demo-s2-14', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s2-15', type: 'dialogue',      text: "You photograph what you own. The app learns your style, your body, your occasions. It tells you what to wear and why. It flags what you haven't touched in six months. Over time it knows your wardrobe better than you do." },
+  { id: 'demo-s2-16', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-s2-17', type: 'dialogue',      text: "Who's your customer? The person who knows exactly what they want, or the person who has no idea?" },
+  { id: 'demo-s2-18', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s2-19', type: 'parenthetical', text: '(without hesitation)' },
+  { id: 'demo-s2-20', type: 'dialogue',      text: "The person who has a closet full of clothes and nothing to wear." },
+  { id: 'demo-s2-21', type: 'action',        text: "Nolan sits back. Studies her." },
+  { id: 'demo-s2-22', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-s2-23', type: 'dialogue',      text: "That's everyone." },
+  { id: 'demo-s2-24', type: 'character',     text: 'MAYA' },
+  { id: 'demo-s2-25', type: 'dialogue',      text: "That's everyone." },
+  { id: 'demo-s2-26', type: 'action',        text: "A long beat. Nolan glances at his notes. The room is very quiet." },
+];
+
+const investTail = [
+  { id: 'demo-inv-01', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-inv-02', type: 'dialogue',      text: "Send me the docs by Friday. I want in." },
+  { id: 'demo-inv-03', type: 'action',        text: "Maya doesn't move. She wasn't ready for it to be this clean." },
+  { id: 'demo-inv-04', type: 'character',     text: 'MAYA' },
+  { id: 'demo-inv-05', type: 'dialogue',      text: "Friday." },
+  { id: 'demo-inv-06', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-inv-07', type: 'parenthetical', text: '(already reaching for his phone)' },
+  { id: 'demo-inv-08', type: 'dialogue',      text: "We'll have counsel loop in Monday." },
+  { id: 'demo-inv-09', type: 'action',        text: "He extends a hand. Maya shakes it. Her grip is steadier than she expected." },
+
+  { id: 'demo-inv-10', type: 'scene-heading', text: "INT. MAYA'S APARTMENT — EVENING" },
+  { id: 'demo-inv-11', type: 'action',        text: "Maya sits on the edge of the couch. Blazer still on. The apartment looks the same as this morning — the whiteboard, the sticky notes. Nothing has changed and everything has." },
+  { id: 'demo-inv-12', type: 'action',        text: 'She picks up her phone. Types a text to Jamie: "He said yes."' },
+  { id: 'demo-inv-13', type: 'action',        text: "She sends it. Then stares at the screen." },
+  { id: 'demo-inv-14', type: 'action',        text: "After a moment she laughs — not from joy exactly, but from the sudden release of something she's been holding for two years. The sound surprises her." },
+  { id: 'demo-inv-15', type: 'action',        text: "She lies back on the couch and looks at the ceiling. The whiteboard is still full of questions she'll have to answer tomorrow." },
+];
+
+const passTail = [
+  { id: 'demo-pass-01', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-pass-02', type: 'dialogue',      text: "I love what you're building. I just don't see the wedge yet." },
+  { id: 'demo-pass-03', type: 'action',        text: "Maya holds the silence for one beat." },
+  { id: 'demo-pass-04', type: 'character',     text: 'MAYA' },
+  { id: 'demo-pass-05', type: 'dialogue',      text: "What would the wedge look like for you?" },
+  { id: 'demo-pass-06', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-pass-07', type: 'dialogue',      text: "Evidence that once someone starts using it, they can't stop. The habit loop." },
+  { id: 'demo-pass-08', type: 'character',     text: 'MAYA' },
+  { id: 'demo-pass-09', type: 'dialogue',      text: "We have retention data." },
+  { id: 'demo-pass-10', type: 'character',     text: 'NOLAN' },
+  { id: 'demo-pass-11', type: 'dialogue',      text: "Send it over. I'm not closing the door — I just need to see more." },
+  { id: 'demo-pass-12', type: 'action',        text: "He stands. Maya stands. They shake hands. She manages a smile that he probably believes." },
+
+  { id: 'demo-pass-13', type: 'scene-heading', text: "INT. MAYA'S APARTMENT — EVENING" },
+  { id: 'demo-pass-14', type: 'action',        text: "Maya sits on the edge of the couch. Blazer still on." },
+  { id: 'demo-pass-15', type: 'action',        text: "She picks up her phone. Almost texts Jamie. Puts it down." },
+  { id: 'demo-pass-16', type: 'action',        text: "She looks at the whiteboard for a long moment." },
+  { id: 'demo-pass-17', type: 'action',        text: "Then she gets up, opens her laptop, and sits at the kitchen counter where she started this morning." },
+  { id: 'demo-pass-18', type: 'action',        text: "She opens a new note. Types three words." },
+  { id: 'demo-pass-19', type: 'action',        text: 'We push in to see the screen: "Find the wedge."' },
+];
+
+export const screenplayInvest = [...screenplayShared, ...investTail];
+export const screenplayPass   = [...screenplayShared, ...passTail];

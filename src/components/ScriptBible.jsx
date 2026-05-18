@@ -416,6 +416,11 @@ export default function ScriptBible({ bible, onChange, mode = "thinking" }) {
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {char.photo && (
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '1px solid var(--border-subtle)' }}>
+                        <img src={char.photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 15%' }} />
+                      </div>
+                    )}
                     <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", fontFamily: "var(--font-mono-ui)" }}>{name}</span>
                     {char.role && <span style={{ fontSize: 10, color: "var(--text-label)", padding: "1px 7px", background: "var(--bg-canvas)", borderRadius: 10 }}>{char.role}</span>}
                   </div>
@@ -514,6 +519,21 @@ export default function ScriptBible({ bible, onChange, mode = "thinking" }) {
         >
           + Add fact
         </button>
+      </div>
+
+      {/* ── References & Influences ── */}
+      <div style={{ marginBottom: sectionGap }}>
+        <SectionHeader label="References & Influences" />
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
+          Tonal comps, visual references, structural influences — and counter-comps (what this is NOT).
+        </div>
+        <WriterField
+          value={bible.storyReferences?.content || ''}
+          onChange={(v) => onChange({ ...bible, storyReferences: { ...bible.storyReferences, content: v } })}
+          placeholder={`Feels tonally like *Drive* — the patience, the quiet menace.\n\nNOT a redemption arc.`}
+          multiline
+          rows={8}
+        />
       </div>
 
     </div>

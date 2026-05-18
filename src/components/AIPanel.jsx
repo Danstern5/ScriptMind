@@ -2,10 +2,10 @@ import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import AIMessage from "./AIMessage";
 import ScriptBible from "./ScriptBible";
-import ScenarioCard from "./ScenarioCard";
+import BeatsTab from "./BeatsTab";
+import AnalysisTab from "./AnalysisTab";
+import CharacterBibleTab from "./CharacterBibleTab";
 import { SendIcon, SparkleIcon } from "./Icons";
-
-const TAB_LABELS = { bible: "Script Bible", explore: "Explore", chat: "Chat" };
 
 export default function AIPanel({
   messages, chatInput, setChatInput, isStreaming, chatEndRef,
@@ -13,93 +13,87 @@ export default function AIPanel({
   currentScene, scenes, elements,
   isThinkingMode, aiPanelTab, setAiPanelTab,
   scriptBible, setScriptBible,
-  scenarios, isExploring, anchoredScenario, clearAnchor,
-  handleExplore, handleDiscuss, toggleScenarioImpact, toggleScenarioPreview,
+  scenarios, anchoredScenario, clearAnchor,
 }) {
-  const tabs = isThinkingMode ? ["bible", "explore", "chat"] : ["chat"];
   return (
-    <div className="flex flex-col" style={{ flex: isThinkingMode ? "1 1 0" : "0 0 360px", minWidth: 0, background: "var(--bg-panel)", borderLeft: "1px solid var(--border-default)", transition: "flex 0.35s ease" }}>
+    <div className="flex flex-col" style={{
+      flex: isThinkingMode ? "1 1 auto" : "0 0 360px",
+      width: isThinkingMode ? undefined : 360,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      background: "var(--bg-panel)",
+      borderLeft: "1px solid var(--border-default)",
+    }}>
       {/* Header */}
-      <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 10 }}>
+      <div className="flex items-center" style={{ height: 48, borderBottom: "1px solid var(--border-default)", padding: "0 16px", gap: 10, flexShrink: 0 }}>
         <div style={{ width: 10, height: 10, borderRadius: "50%", background: "radial-gradient(circle, #86efac, #4ade80)", animation: "ringPulse 2s ease-in-out infinite" }} />
-        <div style={{
-          fontSize: 13, fontWeight: 500,
-          color: "var(--text-primary)",
-        }}>AI Collaborator</div>
-        <div className="flex items-center gap-1 ml-auto">
-          {tabs.map((tab) => {
-            const active = aiPanelTab === tab;
-            return (
-              <button
-                key={tab}
-                onClick={() => setAiPanelTab(tab)}
-                style={{
-                  fontSize: 11, padding: "3px 10px", borderRadius: 3,
-                  background: active ? "rgba(0,0,0,0.07)" : "transparent",
-                  color: active ? "var(--text-primary)" : "var(--text-tertiary)",
-                  fontWeight: active ? 500 : 400,
-                  border: "none", cursor: "pointer", fontFamily: "inherit",
-                  transition: "all 0.15s",
-                }}
-              >
-                {TAB_LABELS[tab]}
-              </button>
-            );
-          })}
-        </div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>AI Collaborator</div>
       </div>
 
-      {aiPanelTab === "bible" && (
+      {/* Full-width tab bar — only in thinking mode */}
+      {isThinkingMode && (
+        <div style={{
+          display: "flex",
+          borderBottom: "1px solid var(--border-subtle)",
+          background: "var(--bg-surface)",
+          flexShrink: 0,
+          overflowX: "auto",
+        }}>
+          {["chat", "storybible", "characterbible", "beats", "analysis"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setAiPanelTab(tab)}
+              style={{
+                flex: tab === "analysis" ? 1.5 : (tab === "storybible" || tab === "characterbible") ? 1.3 : 1,
+                padding: "9px 4px",
+                background: "transparent",
+                border: "none",
+                borderBottom: aiPanelTab === tab
+                  ? "2px solid var(--accent-green)"
+                  : "2px solid transparent",
+                color: aiPanelTab === tab
+                  ? "var(--text-primary)"
+                  : "var(--text-muted)",
+                fontFamily: "var(--font-mono-ui)",
+                fontSize: 10,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {tab === "chat" ? "Chat" :
+               tab === "storybible" ? "Story Bible" :
+               tab === "characterbible" ? "Character Bible" :
+               tab === "beats" ? "Beats" : "Alt. Scene Analysis"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isThinkingMode && aiPanelTab === "storybible" && (
         <div className="flex-1 overflow-y-auto">
           <ScriptBible bible={scriptBible} onChange={setScriptBible} mode="thinking" />
         </div>
       )}
 
-      {aiPanelTab === "explore" && (
-        <div className="flex-1 overflow-y-auto flex flex-col" style={{ padding: 16, gap: 12 }}>
-          <button
-            onClick={handleExplore}
-            disabled={isExploring}
-            className="flex items-center justify-center gap-1.5"
-            style={{
-              fontSize: 12, padding: "8px 12px", borderRadius: 4,
-              border: "1px solid rgba(74,222,128,0.4)",
-              background: "rgba(74,222,128,0.08)",
-              color: "var(--accent-green)",
-              cursor: isExploring ? "default" : "pointer",
-              fontFamily: "inherit", fontWeight: 500,
-              opacity: isExploring ? 0.6 : 1,
-              transition: "all 0.2s",
-              flexShrink: 0,
-            }}
-          >
-            <SparkleIcon /> {isExploring ? "Analyzing…" : "Alternative Scene Analysis"}
-          </button>
+      {isThinkingMode && aiPanelTab === "beats" && <BeatsTab />}
 
-          {scenarios.length === 0 && !isExploring && (
-            <div style={{ padding: "24px 8px", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", lineHeight: 1.6 }}>
-              Click <strong>Alternative Scene Analysis</strong> to explore directions for this scene.
-            </div>
-          )}
-
-          {scenarios.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(280px, 1fr))", gap: 12, alignItems: "start" }}>
-              {scenarios.map((scenario, i) => (
-                <ScenarioCard
-                  key={i}
-                  scenario={scenario}
-                  index={i}
-                  onDiscuss={() => handleDiscuss(i)}
-                  onToggleImpact={() => toggleScenarioImpact(i)}
-                  onTogglePreview={() => toggleScenarioPreview(i)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+      {isThinkingMode && aiPanelTab === "analysis" && (
+        <AnalysisTab
+          onDiscuss={(prompt, cannedResponse) => {
+            sendMessage(prompt, null, cannedResponse);
+            setAiPanelTab("chat");
+          }}
+        />
       )}
 
-      {aiPanelTab === "chat" && (
+      {isThinkingMode && aiPanelTab === "characterbible" && (
+        <CharacterBibleTab scriptBible={scriptBible} onChange={setScriptBible} />
+      )}
+
+      {(!isThinkingMode || aiPanelTab === "chat") && (
         <>
       {anchoredScenario !== null && scenarios[anchoredScenario] && (
         <div className="flex items-center" style={{ margin: "12px 16px 0", padding: "6px 10px", borderRadius: 4, background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.3)", fontSize: 11.5, color: "var(--accent-green)", gap: 8 }}>

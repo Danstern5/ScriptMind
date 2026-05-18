@@ -2,30 +2,54 @@ import { stripHtml } from "../utils/html";
 import { getCurrentSceneIndex } from "../utils/screenplay";
 import { PlusIcon } from "./Icons";
 
+const getShortSceneTitle = (rawText) => {
+  const text = stripHtml(rawText) || 'UNTITLED';
+  return text
+    .replace(/^(INT\.\/EXT\.|EXT\.\/INT\.|INT\.|EXT\.)\s*/i, '')
+    .replace(/\s*[—–-]\s*(DAY|NIGHT|MORNING|EVENING|DUSK|DAWN|LATER|CONTINUOUS|MOMENTS LATER|SAME TIME|SAME)$/i, '')
+    .trim();
+};
+
 export default function Sidebar({ scenes, elements, activeElId, currentScene, jumpToScene, insertElementAfter, numPages, wordCount, lastSaved, onOpenScriptBible, isThinkingMode }) {
   return (
-    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: isThinkingMode ? 40 : 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)", transition: "width 0.35s ease" }}>
+    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: isThinkingMode ? 130 : 220, background: "#ebebeb", borderRight: "1px solid var(--border-default)", transition: "width 0.35s ease" }}>
       {isThinkingMode ? (
-        <div className="flex flex-col items-center" style={{ paddingTop: 12, gap: 6, overflowY: "auto", flex: 1 }}>
+        <div className="flex flex-col" style={{ paddingTop: 12, gap: 4, overflowY: "auto", flex: 1, paddingBottom: 12 }}>
           {scenes.map((scene, i) => {
             const isActive = getCurrentSceneIndex(elements, activeElId) === i + 1;
+            const shortTitle = getShortSceneTitle(scene.text);
             return (
               <div
                 key={scene.id}
                 onClick={() => jumpToScene(scene.id)}
                 title={stripHtml(scene.text) || "UNTITLED SCENE"}
                 style={{
-                  width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "5px 10px", cursor: "pointer",
+                  borderLeft: isActive ? "2px solid var(--accent-green)" : "2px solid transparent",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+              >
+                <div style={{
+                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   backgroundColor: isActive ? "rgba(74,222,128,0.15)" : "rgba(0,0,0,0.07)",
                   color: isActive ? "var(--accent-green)" : "var(--text-tertiary)",
                   fontSize: 9, fontFamily: "var(--font-mono-ui)", fontWeight: 600,
                   border: isActive ? "1px solid rgba(74,222,128,0.4)" : "1px solid transparent",
-                  transition: "all 0.2s",
-                  flexShrink: 0,
-                }}
-              >
-                {i + 1}
+                }}>
+                  {i + 1}
+                </div>
+                <span style={{
+                  fontSize: 10, fontFamily: "var(--font-mono-ui)",
+                  color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  letterSpacing: "0.02em", textTransform: "uppercase", maxWidth: 80,
+                }}>
+                  {shortTitle}
+                </span>
               </div>
             );
           })}

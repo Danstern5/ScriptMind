@@ -7,7 +7,7 @@ import { FileIcon, DownloadIcon, ChevronIcon } from "./components/Icons";
 import useAIChat from "./hooks/useAIChat";
 import usePageLayout from "./hooks/usePageLayout";
 import useFileOperations from "./hooks/useFileOperations";
-import useAuth from "./hooks/useAuth";
+import { useDemo } from "./demo/demoState.jsx";
 import ContextMenu from "./components/ContextMenu";
 import TitlePageEditor from "./components/TitlePageEditor";
 import RenameCharacterModal from "./components/RenameCharacterModal";
@@ -15,9 +15,10 @@ import FileMenu from "./components/FileMenu";
 import Sidebar from "./components/Sidebar";
 import EditorArea from "./components/EditorArea";
 import AIPanel from "./components/AIPanel";
+import PreProductionPanel from "./components/PreProductionPanel";
 import SelectionToolbar from "./components/SelectionToolbar";
 import ScriptBible from "./components/ScriptBible";
-import { DEFAULT_SCRIPT_BIBLE } from "./utils/scriptBible";
+import { DEMO_SCRIPT_BIBLE } from "./demo/scriptBible";
 import { PLACEHOLDER_SCENARIOS } from "./utils/scenarios";
 
 // ─── Constants ───
@@ -40,25 +41,23 @@ const DEFAULT_TITLE_PAGE = {
 
 // ─── Main App ───
 export default function ScriptMind() {
-  const { logout } = useAuth();
-  const [elements, setElements] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_elements");
-      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
-    } catch { return DEFAULT_SCRIPT.elements; }
-  });
-  const [activeElId, setActiveElId] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_elements");
-      const els = saved ? JSON.parse(saved) : DEFAULT_SCRIPT.elements;
-      return els[0]?.id || "el-1";
-    } catch { return "el-1"; }
-  });
+  const { screenplay } = useDemo();
+  const [elements, setElements] = useState(screenplay);
+  const [activeElId, setActiveElId] = useState(screenplay[0]?.id || 'demo-s1-01');
+  const [isSwapping, setIsSwapping] = useState(false);
+
+  useEffect(() => {
+    setIsSwapping(true);
+    const t = setTimeout(() => {
+      setElements(screenplay);
+      setActiveElId(screenplay[0]?.id || 'demo-s1-01');
+      setIsSwapping(false);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [screenplay]);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [lastSaved, setLastSaved] = useState("just now");
-  const [scriptTitle, setScriptTitle] = useState(() => {
-    return localStorage.getItem("scriptmind_title") || "untitled_screenplay";
-  });
+  const [scriptTitle, setScriptTitle] = useState('UNDERSTUDY');
   const [notification, setNotification] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [renameModal, setRenameModal] = useState(null); // { oldName, newName }
@@ -71,18 +70,22 @@ export default function ScriptMind() {
   const [showTitlePageEditor, setShowTitlePageEditor] = useState(false);
   const [toolbarSelection, setToolbarSelection] = useState(null); // { text, rect } | null
   const [showScriptBible, setShowScriptBible] = useState(false);
-  const [scriptBible, setScriptBible] = useState(() => {
-    try {
-      const saved = localStorage.getItem("scriptmind_bible");
-      return saved ? JSON.parse(saved) : DEFAULT_SCRIPT_BIBLE;
-    } catch { return DEFAULT_SCRIPT_BIBLE; }
-  });
+  const [scriptBible, setScriptBible] = useState(DEMO_SCRIPT_BIBLE);
   const [isThinkingMode, setIsThinkingMode] = useState(false);
-  const [aiPanelTab, setAiPanelTab] = useState("chat"); // "chat" | "bible" | "explore"
+  const [aiPanelTab, setAiPanelTab] = useState("chat"); // "chat" | "storybible" | "characterbible" | "beats" | "analysis"
+  const [isProdMode, setIsProdMode] = useState(false);
   const toggleThinkingMode = (next) => {
     setIsThinkingMode(next);
-    if (next && aiPanelTab === "chat") setAiPanelTab("bible");
+    setIsProdMode(false);
+    if (next && aiPanelTab === "chat") setAiPanelTab("beats");
     if (!next) setAiPanelTab("chat");
+  };
+  const toggleProdMode = () => {
+    setIsProdMode(v => {
+      const next = !v;
+      if (next) { setIsThinkingMode(false); setAiPanelTab("chat"); }
+      return next;
+    });
   };
   const [scenarios, setScenarios] = useState([]);
   const [anchoredScenario, setAnchoredScenario] = useState(null);
@@ -555,7 +558,7 @@ export default function ScriptMind() {
 
         <div className="flex items-center" style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", gap: 2 }}>
           {["Writing Mode", "Thinking Mode"].map((label) => {
-            const active = label === "Writing Mode" ? !isThinkingMode : isThinkingMode;
+            const active = label === "Writing Mode" ? !isThinkingMode && !isProdMode : isThinkingMode;
             return (
               <button
                 key={label}
@@ -563,7 +566,7 @@ export default function ScriptMind() {
                 style={{
                   fontSize: 11.5, padding: "4px 14px", borderRadius: 4,
                   background: active ? "rgba(0,0,0,0.07)" : "transparent",
-                  border: active ? "1px solid var(--border-default)" : "1px solid transparent",
+                  border: active ? "1px solid var(--accent-green)" : "1px solid var(--border-subtle)",
                   color: active ? "var(--text-primary)" : "var(--text-tertiary)",
                   fontWeight: active ? 500 : 400,
                   cursor: "pointer", fontFamily: "inherit",
@@ -574,6 +577,29 @@ export default function ScriptMind() {
               </button>
             );
           })}
+          <button
+            onClick={toggleProdMode}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 4,
+              border: isProdMode ? '1px solid var(--accent-green)' : '1px solid var(--border-subtle)',
+              background: 'transparent',
+              color: isProdMode ? 'var(--accent-green)' : 'var(--text-muted)',
+              fontFamily: 'var(--font-mono-ui)', fontSize: 12,
+              cursor: 'pointer', letterSpacing: '0.05em',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+              <rect x="1" y="4" width="2" height="2" fill="currentColor" rx="0.3"/>
+              <rect x="1" y="8" width="2" height="2" fill="currentColor" rx="0.3"/>
+              <rect x="11" y="4" width="2" height="2" fill="currentColor" rx="0.3"/>
+              <rect x="11" y="8" width="2" height="2" fill="currentColor" rx="0.3"/>
+              <line x1="5" y1="2" x2="5" y2="12" stroke="currentColor" strokeWidth="1"/>
+              <line x1="9" y1="2" x2="9" y2="12" stroke="currentColor" strokeWidth="1"/>
+            </svg>
+            PRE-PROD
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
@@ -602,58 +628,59 @@ export default function ScriptMind() {
           >
             <DownloadIcon /> Export PDF
           </button>
-          <button
-            onClick={logout}
-            style={{ fontSize: 12, padding: "5px 12px", borderRadius: 4, border: "1px solid var(--border-default)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}
-          >
-            Log out
-          </button>
         </div>
       </div>
 
       {/* ── MAIN WORKSPACE ── */}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          scenes={scenes} elements={elements} activeElId={activeElId}
-          currentScene={currentScene} jumpToScene={jumpToScene}
-          insertElementAfter={insertElementAfter}
-          numPages={numPages} wordCount={wordCount} lastSaved={lastSaved}
-          onOpenScriptBible={() => setShowScriptBible(true)}
-          isThinkingMode={isThinkingMode}
-        />
-        <div style={{
-          display: "flex", flexDirection: "column", overflow: "hidden",
-          flex: isThinkingMode ? "0 0 0px" : "1 1 0",
-          opacity: isThinkingMode ? 0 : 1,
-          pointerEvents: isThinkingMode ? "none" : "auto",
-          transition: "flex 0.35s ease, opacity 0.25s ease",
-          minWidth: 0,
-        }}>
-          <EditorArea
-            elements={elements} activeElId={activeElId} setActiveElId={setActiveElId}
-            changeElementType={changeElementType} updateElement={updateElement}
-            handleKeyDown={handleKeyDown} sceneNumberMap={sceneNumberMap}
-            suggestions={suggestions} acIndex={acIndex} setAcIndex={setAcIndex}
-            acceptSuggestion={acceptSuggestion}
-            contentRef={contentRef} editorScrollRef={editorScrollRef}
-            numPages={numPages} currentPage={currentPage} currentScene={currentScene}
-            pageBreakMarkers={pageBreakMarkers}
-            titlePage={titlePage} setShowTitlePageEditor={setShowTitlePageEditor}
-          />
-        </div>
-        <AIPanel
-          messages={messages} chatInput={chatInput} setChatInput={setChatInput}
-          isStreaming={isStreaming} chatEndRef={chatEndRef}
-          sendMessage={sendMessage} handleRewriteScene={handleRewriteScene}
-          handleSuggestNext={handleSuggestNext}
-          currentScene={currentScene} scenes={scenes} elements={elements}
-          isThinkingMode={isThinkingMode} aiPanelTab={aiPanelTab} setAiPanelTab={setAiPanelTab}
-          scriptBible={scriptBible} setScriptBible={setScriptBible}
-          scenarios={scenarios} isExploring={isExploring}
-          anchoredScenario={anchoredScenario} clearAnchor={() => setAnchoredScenario(null)}
-          handleExplore={handleExplore} handleDiscuss={handleDiscuss}
-          toggleScenarioImpact={toggleScenarioImpact} toggleScenarioPreview={toggleScenarioPreview}
-        />
+        {isProdMode ? (
+          <PreProductionPanel scriptBible={scriptBible} />
+        ) : (
+          <>
+            <Sidebar
+              scenes={scenes} elements={elements} activeElId={activeElId}
+              currentScene={currentScene} jumpToScene={jumpToScene}
+              insertElementAfter={insertElementAfter}
+              numPages={numPages} wordCount={wordCount} lastSaved={lastSaved}
+              onOpenScriptBible={() => setShowScriptBible(true)}
+              isThinkingMode={isThinkingMode}
+            />
+            <div style={{
+              display: isThinkingMode ? "none" : "flex",
+              flex: "1 1 auto",
+              flexDirection: "column",
+              overflow: "hidden",
+              minWidth: 0,
+              opacity: isSwapping ? 0 : 1,
+              transition: "opacity 300ms ease",
+            }}>
+              <EditorArea
+                elements={elements} activeElId={activeElId} setActiveElId={setActiveElId}
+                changeElementType={changeElementType} updateElement={updateElement}
+                handleKeyDown={handleKeyDown} sceneNumberMap={sceneNumberMap}
+                suggestions={suggestions} acIndex={acIndex} setAcIndex={setAcIndex}
+                acceptSuggestion={acceptSuggestion}
+                contentRef={contentRef} editorScrollRef={editorScrollRef}
+                numPages={numPages} currentPage={currentPage} currentScene={currentScene}
+                pageBreakMarkers={pageBreakMarkers}
+                titlePage={titlePage} setShowTitlePageEditor={setShowTitlePageEditor}
+              />
+            </div>
+            <AIPanel
+              messages={messages} chatInput={chatInput} setChatInput={setChatInput}
+              isStreaming={isStreaming} chatEndRef={chatEndRef}
+              sendMessage={sendMessage} handleRewriteScene={handleRewriteScene}
+              handleSuggestNext={handleSuggestNext}
+              currentScene={currentScene} scenes={scenes} elements={elements}
+              isThinkingMode={isThinkingMode} aiPanelTab={aiPanelTab} setAiPanelTab={setAiPanelTab}
+              scriptBible={scriptBible} setScriptBible={setScriptBible}
+              scenarios={scenarios} isExploring={isExploring}
+              anchoredScenario={anchoredScenario} clearAnchor={() => setAnchoredScenario(null)}
+              handleExplore={handleExplore} handleDiscuss={handleDiscuss}
+              toggleScenarioImpact={toggleScenarioImpact} toggleScenarioPreview={toggleScenarioPreview}
+            />
+          </>
+        )}
       </div>
 
       {/* ── STATUS BAR ── */}
